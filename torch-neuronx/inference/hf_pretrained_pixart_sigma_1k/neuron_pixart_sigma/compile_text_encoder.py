@@ -65,8 +65,8 @@ def get_text_encoder(tp_degree: int, sequence_length: int):
 def compile_text_encoder(args):
     batch_size = 1 # batch_size = args.num_prompts
     sequence_length = args.max_sequence_length
-    tp_degree = 4 # Use tensor parallel degree as 4 for trn2
-    # tp_degree = 8 # Use tensor parallel degree as 8 for trn1/inf2
+    # tp_degree = 4 # Use tensor parallel degree as 4 for trn2
+    tp_degree = 8 # Use tensor parallel degree as 8 for trn1/inf2
     os.environ["LOCAL_WORLD_SIZE"] = "4"
     get_text_encoder_f = partial(get_text_encoder, tp_degree, sequence_length)
     

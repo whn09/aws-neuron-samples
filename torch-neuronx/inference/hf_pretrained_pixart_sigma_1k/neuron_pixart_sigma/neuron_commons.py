@@ -72,7 +72,6 @@ def neuron_scaled_dot_product_attention(query, key, value, attn_mask=None, dropo
 
 
 def attention_wrapper_sharded_without_swap(query, key, value):
-    from neuronxcc.starfish.penguin.targets.nki.private_api import vnc
     bs, n_head, q_len, d_head = query.shape
     q = query.clone().permute(0, 1, 3, 2).reshape((bs*n_head, d_head, q_len))
     k = key.clone().permute(0, 1, 3, 2).reshape((bs*n_head, d_head, q_len))
@@ -81,7 +80,8 @@ def attention_wrapper_sharded_without_swap(query, key, value):
     use_sharded_attention_kernel = True # Use "need use_sharded_attention_kernel = True" in case of trn2
     # use_sharded_attention_kernel = False # We do not "need use_sharded_attention_kernel" in case of trn1/inf2, so we could make it false
     if use_sharded_attention_kernel:
-        grid = (vnc(2),)
+        # grid = (vnc(2),)
+        grid = (2,)
         _flash_fwd_call[grid](q, k, v, 0.117, attn_output, kernel_name="AttentionMMSoftmaxMMWithoutSwap")
     else:
         _flash_fwd_call(q, k, v, 0.117, attn_output, kernel_name="AttentionMMSoftmaxMMWithoutSwap")
