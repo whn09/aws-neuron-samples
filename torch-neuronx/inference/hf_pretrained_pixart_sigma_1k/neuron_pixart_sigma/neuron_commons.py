@@ -40,7 +40,7 @@ import torch
 import math
 from torch import nn
 
-from neuronxcc.starfish.penguin.targets.nki.private_api import vnc
+# from neuronxcc.starfish.penguin.targets.nki.private_api import vnc
 from torch_neuronx.xla_impl.ops import nki_jit
 from neuronxcc.nki._private_kernels.attention import attention_isa_kernel
 _flash_fwd_call = nki_jit()(attention_isa_kernel)
@@ -72,6 +72,7 @@ def neuron_scaled_dot_product_attention(query, key, value, attn_mask=None, dropo
 
 
 def attention_wrapper_sharded_without_swap(query, key, value):
+    from neuronxcc.starfish.penguin.targets.nki.private_api import vnc
     bs, n_head, q_len, d_head = query.shape
     q = query.clone().permute(0, 1, 3, 2).reshape((bs*n_head, d_head, q_len))
     k = key.clone().permute(0, 1, 3, 2).reshape((bs*n_head, d_head, q_len))
