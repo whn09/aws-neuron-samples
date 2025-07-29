@@ -529,7 +529,7 @@ decoder = copy.deepcopy(pipe.vae.decoder)
 del pipe
 
 # replace_upsample_layers(decoder)
-replace_upsample_layers_v2(decoder)
+# replace_upsample_layers_v2(decoder)
 
 # Compile vae decoder
 decoder_in = torch.randn([batch_size, 16, frames, height, width], dtype=torch.float32)

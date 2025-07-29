@@ -7,7 +7,7 @@ os.environ["NEURON_CUSTOM_SILU"] = "1"
 compiler_flags = """ --verbose=INFO --target=trn1 --model-type=unet-inference --enable-fast-loading-neuron-binaries """ # Use these compiler flags for trn1/inf2
 os.environ["NEURON_CC_FLAGS"] = os.environ.get("NEURON_CC_FLAGS", "") + compiler_flags
 
-from diffusers import PixArtSigmaPipeline
+from diffusers import AutoencoderKLWan, WanPipeline
 import torch
 import argparse
 import torch_neuronx
@@ -23,16 +23,16 @@ def upcast_norms_to_f32(decoder: Decoder):
             orig_resnet_norm2 = resnet.norm2
             resnet.norm1 = f32Wrapper(orig_resnet_norm1)
             resnet.norm2 = f32Wrapper(orig_resnet_norm2)
-    for attn in decoder.mid_block.attentions:
-        orig_group_norm = attn.group_norm
-        attn.group_norm = f32Wrapper(orig_group_norm)
+    # for attn in decoder.mid_block.attentions:
+    #     orig_group_norm = attn.group_norm
+    #     attn.group_norm = f32Wrapper(orig_group_norm)
     for resnet in decoder.mid_block.resnets:
         orig_resnet_norm1 = resnet.norm1
         orig_resnet_norm2 = resnet.norm2
         resnet.norm1 = f32Wrapper(orig_resnet_norm1)
         resnet.norm2 = f32Wrapper(orig_resnet_norm2)
-    orig_conv_norm_out = decoder.conv_norm_out
-    decoder.conv_norm_out = f32Wrapper(orig_conv_norm_out)
+    orig_norm_out = decoder.norm_out
+    decoder.norm_out = f32Wrapper(orig_norm_out)
 
 def compile_decoder(args):
     latent_height = args.height//8
@@ -41,19 +41,20 @@ def compile_decoder(args):
     compiled_models_dir = args.compiled_models_dir
     
     batch_size = 1 
-    dtype = torch.bfloat16
-    pipe: PixArtSigmaPipeline = PixArtSigmaPipeline.from_pretrained(
-        "PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
-        cache_dir="pixart_sigma_hf_cache_dir_1024",
-        local_files_only=True,
-        torch_dtype=dtype)
+    frames = 16
+    height, width = 96, 96
+    in_channels = 16
     
-    decoder: Decoder = pipe.vae.decoder
+    DTYPE = torch.bfloat16
+    model_id = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+    vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32, cache_dir="wan2.1_t2v_hf_cache_dir")
+    
+    decoder: Decoder = vae.decoder
     decoder.eval()
     upcast_norms_to_f32(decoder)
 
     with torch.no_grad():
-        sample_inputs = torch.rand((batch_size, 4, latent_height, latent_width), dtype=dtype)
+        sample_inputs = torch.rand((batch_size, in_channels, frames, height, width), dtype=torch.float32)
         compiled_decoder = torch_neuronx.trace(
             decoder,
             sample_inputs,
@@ -67,7 +68,7 @@ def compile_decoder(args):
         torch.jit.save(compiled_decoder, f"{compiled_model_dir}/model.pt")
 
         compiled_post_quant_conv = torch_neuronx.trace(
-            pipe.vae.post_quant_conv,
+            vae.post_quant_conv,
             sample_inputs,
             compiler_workdir=f"{compiler_workdir}/post_quant_conv",
             compiler_args=compiler_flags,
