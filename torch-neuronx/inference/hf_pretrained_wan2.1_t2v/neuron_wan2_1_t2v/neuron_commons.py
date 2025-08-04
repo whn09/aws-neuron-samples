@@ -1,9 +1,9 @@
-from diffusers import PixArtSigmaPipeline, Transformer2DModel
-from transformers.models.t5.modeling_t5 import T5EncoderModel
+from diffusers import Transformer2DModel
+from transformers.models.umt5 import UMT5EncoderModel
 from torch import nn
 
 class InferenceTextEncoderWrapper(nn.Module):
-    def __init__(self, dtype, t: T5EncoderModel, seqlen: int):
+    def __init__(self, dtype, t: UMT5EncoderModel, seqlen: int):
         super().__init__()
         self.dtype = dtype
         self.device = t.device

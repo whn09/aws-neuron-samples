@@ -330,7 +330,7 @@ in_channels = 16  # 根据配置，Wan使用16个输入通道
 # torch_neuronx.lazy_load(transformer_neuron)
 
 # # save compiled transformer
-# transformer_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'transfomer/model.pt')
+# transformer_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'transformer/model.pt')
 # torch.jit.save(transformer_neuron, transformer_filename)
 
 # # delete unused objects
@@ -592,28 +592,28 @@ del decoder_neuron
 # pipe = WanPipeline.from_pretrained(model_id, vae=vae, torch_dtype=DTYPE)
 # pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
 
-# # Load the compiled Transformer onto two neuron cores.
-# pipe.transformer = NeuronTransformer(TransformerWrap(pipe.transformer))
-# device_ids = [0,1]
-# pipe.transformer.transformer_wrap = torch_neuronx.DataParallel(torch.jit.load(transformer_filename), device_ids, set_dynamic_batching=False)
+# Load the compiled Transformer onto two neuron cores.
+pipe.transformer = NeuronTransformer(TransformerWrap(pipe.transformer))
+device_ids = [0,1]
+pipe.transformer.transformer_wrap = torch_neuronx.DataParallel(torch.jit.load(transformer_filename), device_ids, set_dynamic_batching=False)
 
-# # Load other compiled models onto a single neuron core.
-# pipe.text_encoder = NeuronTextEncoder(pipe.text_encoder)
-# pipe.text_encoder.neuron_text_encoder = torch.jit.load(text_encoder_filename)
-# pipe.vae.decoder = torch.jit.load(decoder_filename)
-# pipe.vae.post_quant_conv = torch.jit.load(post_quant_conv_filename)
+# Load other compiled models onto a single neuron core.
+pipe.text_encoder = NeuronTextEncoder(pipe.text_encoder)
+pipe.text_encoder.neuron_text_encoder = torch.jit.load(text_encoder_filename)
+pipe.vae.decoder = torch.jit.load(decoder_filename)
+pipe.vae.post_quant_conv = torch.jit.load(post_quant_conv_filename)
 
-#  # Run pipeline
-# prompt = ["A cat walks on the grass, realistic"]
-# negative_prompt = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"
+ # Run pipeline
+prompt = ["A cat walks on the grass, realistic"]
+negative_prompt = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"
 
-# # First do a warmup run so all the asynchronous loads can finish.
-# output_warmup = pipe(prompt[0], negative_prompt=negative_prompt, height=480, width=832, num_frames=81, guidance_scale=5.0).frames[0]
+# First do a warmup run so all the asynchronous loads can finish.
+output_warmup = pipe(prompt[0], negative_prompt=negative_prompt, height=480, width=832, num_frames=81, guidance_scale=5.0).frames[0]
 
-# total_time = 0
-# for x in prompt:
-#     start_time = time.time()
-#     video = pipe(x, negative_prompt=negative_prompt, height=480, width=832, num_frames=81, guidance_scale=5.0).frames[0]  # 或其他适当的属性
-#     total_time = total_time + (time.time()-start_time)
-#     export_to_video(video, f"wan_video_{x}.mp4", fps=15)
-# print("Average time: ", np.round((total_time/len(prompt)), 2), "seconds")
+total_time = 0
+for x in prompt:
+    start_time = time.time()
+    video = pipe(x, negative_prompt=negative_prompt, height=480, width=832, num_frames=81, guidance_scale=5.0).frames[0]  # 或其他适当的属性
+    total_time = total_time + (time.time()-start_time)
+    export_to_video(video, f"wan_video_{x}.mp4", fps=15)
+print("Average time: ", np.round((total_time/len(prompt)), 2), "seconds")

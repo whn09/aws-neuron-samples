@@ -117,11 +117,13 @@ COMPILER_WORKDIR_ROOT = "compile_workdir_latency_optimized"
 
 # --- Compile CLIP text encoder and save [PASS] ---
 
-# Only keep the model being compiled in RAM to minimze memory pressure
-vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32, cache_dir="wan2.1_t2v_hf_cache_dir")
-pipe = WanPipeline.from_pretrained(model_id, vae=vae, torch_dtype=DTYPE, cache_dir="wan2.1_t2v_hf_cache_dir")
-text_encoder = copy.deepcopy(pipe.text_encoder)
-del pipe
+# # Only keep the model being compiled in RAM to minimze memory pressure
+# vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32, cache_dir="wan2.1_t2v_hf_cache_dir")
+# pipe = WanPipeline.from_pretrained(model_id, torch_dtype=DTYPE, cache_dir="wan2.1_t2v_hf_cache_dir")
+# text_encoder = copy.deepcopy(pipe.text_encoder)
+# del pipe
+
+text_encoder = UMT5EncoderModel.from_pretrained(model_id, subfolder="text_encoder", torch_dtype=DTYPE, cache_dir="wan2.1_t2v_hf_cache_dir")
 
 # Apply the wrapper to deal with custom return type
 text_encoder = NeuronTextEncoder(text_encoder)

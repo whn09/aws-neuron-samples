@@ -7,7 +7,7 @@ os.environ["NEURON_CUSTOM_SILU"] = "1"
 compiler_flags = """ --verbose=INFO --target=trn1 --model-type=unet-inference --enable-fast-loading-neuron-binaries """ # Use these compiler flags for trn1/inf2
 os.environ["NEURON_CC_FLAGS"] = os.environ.get("NEURON_CC_FLAGS", "") + compiler_flags
 
-from diffusers import AutoencoderKLWan, WanPipeline
+from diffusers import AutoencoderKLWan
 import torch
 import argparse
 import torch_neuronx
@@ -41,11 +41,10 @@ def compile_decoder(args):
     compiled_models_dir = args.compiled_models_dir
     
     batch_size = 1
-    frames = 16
-    height, width = 96, 96
+    frames = 4  # default: 16
+    height, width = 32,32  # default: 96, 96
     in_channels = 16
     
-    DTYPE = torch.bfloat16
     model_id = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
     vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32, cache_dir="wan2.1_t2v_hf_cache_dir")
     

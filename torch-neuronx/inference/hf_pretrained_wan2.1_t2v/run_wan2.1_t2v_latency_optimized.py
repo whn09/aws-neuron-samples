@@ -1,5 +1,5 @@
 # imports
-from diffusers import PixArtSigmaPipeline
+from diffusers import AutoencoderKLWan, WanPipeline
 
 import neuronx_distributed
 import numpy as npy
@@ -7,20 +7,20 @@ import time
 import torch
 import torch_neuronx
 
-from neuron_pixart_sigma.neuron_commons import InferenceTextEncoderWrapper
-from neuron_pixart_sigma.neuron_commons import InferenceTransformerWrapper
-from neuron_pixart_sigma.neuron_commons import SimpleWrapper
+from neuron_wan2_1_t2v.neuron_commons import InferenceTextEncoderWrapper
+from neuron_wan2_1_t2v.neuron_commons import InferenceTransformerWrapper
+from neuron_wan2_1_t2v.neuron_commons import SimpleWrapper
 
 COMPILED_MODELS_DIR = "compile_workdir_latency_optimized"
-HUGGINGFACE_CACHE_DIR = "pixart_sigma_hf_cache_dir_1024"
+HUGGINGFACE_CACHE_DIR = "wan2.1_t2v_hf_cache_dir"
 
 if __name__ == "__main__":
-    pipe: PixArtSigmaPipeline = PixArtSigmaPipeline.from_pretrained(
-        "PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
-        torch_dtype=torch.bfloat16,
-        local_files_only=True,
-        cache_dir="pixart_sigma_hf_cache_dir_1024")
-
+    DTYPE=torch.bfloat16
+    model_id = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+    
+    vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32, cache_dir="wan2.1_t2v_hf_cache_dir")
+    pipe = WanPipeline.from_pretrained(model_id, vae=vae, torch_dtype=DTYPE, cache_dir="wan2.1_t2v_hf_cache_dir")
+    
     text_encoder_model_path = f"{COMPILED_MODELS_DIR}/text_encoder"
     transformer_model_path = f"{COMPILED_MODELS_DIR}/transformer" 
     decoder_model_path = f"{COMPILED_MODELS_DIR}/decoder/model.pt"
@@ -66,8 +66,8 @@ if __name__ == "__main__":
         prompt=prompt, 
         negative_prompt=negative_prompt, 
         num_images_per_prompt=1, 
-        height=1024,
-        width=1024,
+        height=480,
+        width=640,
         num_inference_steps=25
     ).images[0]
     
@@ -76,8 +76,8 @@ if __name__ == "__main__":
         prompt=prompt,
         negative_prompt=negative_prompt,
         num_images_per_prompt=1,
-        height=1024,
-        width=1024,
+        height=480,
+        width=640,
         num_inference_steps=25
     ).images
     
