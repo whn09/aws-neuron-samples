@@ -40,7 +40,7 @@ def compile_decoder(args):
     compiler_workdir = args.compiler_workdir
     compiled_models_dir = args.compiled_models_dir
     
-    batch_size = 1 
+    batch_size = 1
     frames = 16
     height, width = 96, 96
     in_channels = 16
@@ -52,9 +52,10 @@ def compile_decoder(args):
     decoder: Decoder = vae.decoder
     decoder.eval()
     upcast_norms_to_f32(decoder)
-
+    
     with torch.no_grad():
         sample_inputs = torch.rand((batch_size, in_channels, frames, height, width), dtype=torch.float32)
+        
         compiled_decoder = torch_neuronx.trace(
             decoder,
             sample_inputs,
