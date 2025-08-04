@@ -3,6 +3,10 @@
 
 import os
 os.environ["NEURON_FUSE_SOFTMAX"] = "1"
+os.environ["NEURON_CUSTOM_SILU"] = "1"
+
+compiler_flags = """ --verbose=INFO --target=trn1 --model-type=transformer --enable-fast-loading-neuron-binaries """ # Use these compiler flags for trn1/inf2
+os.environ["NEURON_CC_FLAGS"] = os.environ.get("NEURON_CC_FLAGS", "") + compiler_flags
 
 import torch
 import torch.nn as nn
@@ -128,10 +132,10 @@ class KernelizedWanAttnProcessor2_0:
         key = key.unflatten(2, (attn.heads, -1)).transpose(1, 2)
         value = value.unflatten(2, (attn.heads, -1)).transpose(1, 2)
 
-        # 使用XLA兼容的rotary embedding
-        if rotary_emb is not None:
-            query = apply_rotary_emb_xla_compatible(query, rotary_emb)
-            key = apply_rotary_emb_xla_compatible(key, rotary_emb)
+        # # TODO: 使用XLA兼容的rotary embedding
+        # if rotary_emb is not None:
+        #     query = apply_rotary_emb_xla_compatible(query, rotary_emb)
+        #     key = apply_rotary_emb_xla_compatible(key, rotary_emb)
 
         # I2V task
         hidden_states_img = None
@@ -284,102 +288,100 @@ model_id = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
 
 # These dimensions need to be adjusted based on Wan2.1's expected input format
 batch_size = 1
-frames = 16  # typical frame count for video generation
-height, width = 96, 96  # spatial dimensions
+frames = 4  # default: 16  # typical frame count for video generation
+height, width = 32, 32  # default: 96, 96  # spatial dimensions
 in_channels = 16  # 根据配置，Wan使用16个输入通道
 
-# # --- Compile Transformer and save [NOT PASS]---
+# --- Compile Transformer and save [PASS]---
 
-# vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32)
-# pipe = WanPipeline.from_pretrained(model_id, vae=vae, torch_dtype=DTYPE)
+vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32)
+pipe = WanPipeline.from_pretrained(model_id, vae=vae, torch_dtype=DTYPE)
 
-# # Replace original cross-attention module with custom cross-attention module for better performance
-# if use_new_diffusers:
-#     Attention.get_attention_scores = get_attention_scores
-# else:
-#     CrossAttention.get_attention_scores = get_attention_scores
+# Replace original cross-attention module with custom cross-attention module for better performance
+if use_new_diffusers:
+    Attention.get_attention_scores = get_attention_scores
+else:
+    CrossAttention.get_attention_scores = get_attention_scores
 
-# # Apply double wrapper to deal with custom return type
-# pipe.transformer = NeuronTransformer(TransformerWrap(pipe.transformer))
+# Apply double wrapper to deal with custom return type
+pipe.transformer = NeuronTransformer(TransformerWrap(pipe.transformer))
 
-# # Only keep the model being compiled in RAM to minimze memory pressure
-# transformer = copy.deepcopy(pipe.transformer.transformer_wrap)
-# del pipe
+# Only keep the model being compiled in RAM to minimze memory pressure
+transformer = copy.deepcopy(pipe.transformer.transformer_wrap)
+del pipe
 
-# # Compile transformer - adjust input shapes for 3D video
+# Compile transformer - adjust input shapes for 3D video
 
-# # 3D input for video: (batch, channels, frames, height, width)
-# hidden_states_1b = torch.randn([batch_size, in_channels, frames, height, width], dtype=DTYPE)
-# timestep_1b = torch.tensor(999, dtype=DTYPE).expand((batch_size,))
-# # Text encoder output dimension for Wan (might be different from SD)
-# encoder_hidden_states_1b = torch.randn([batch_size, 77, 4096], dtype=DTYPE)  # Wan uses 4096 dim
+# 3D input for video: (batch, channels, frames, height, width)
+hidden_states_1b = torch.randn([batch_size, in_channels, frames, height, width], dtype=DTYPE)
+timestep_1b = torch.tensor(999, dtype=DTYPE).expand((batch_size,))
+# Text encoder output dimension for Wan (might be different from SD)
+encoder_hidden_states_1b = torch.randn([batch_size, 77, 4096], dtype=DTYPE)  # Wan uses 4096 dim
 
-# example_inputs = hidden_states_1b, timestep_1b, encoder_hidden_states_1b
+example_inputs = hidden_states_1b, timestep_1b, encoder_hidden_states_1b
 
-# print('********************Before torch_neuronx.trace********************')
-# transformer_neuron = torch_neuronx.trace(
-#     transformer,
-#     example_inputs,
-#     compiler_workdir=os.path.join(COMPILER_WORKDIR_ROOT, 'transformer'),
-#     compiler_args=["--enable-fast-loading-neuron-binaries"]
-# )
-# print('********************After torch_neuronx.trace********************')
+transformer_neuron = torch_neuronx.trace(
+    transformer,
+    example_inputs,
+    compiler_workdir=os.path.join(COMPILER_WORKDIR_ROOT, 'transformer'),
+    compiler_args=compiler_flags
+)
 
-# # Enable asynchronous and lazy loading to speed up model load
-# torch_neuronx.async_load(transformer_neuron)
-# torch_neuronx.lazy_load(transformer_neuron)
+# Enable asynchronous and lazy loading to speed up model load
+torch_neuronx.async_load(transformer_neuron)
+torch_neuronx.lazy_load(transformer_neuron)
 
-# # save compiled transformer
-# transformer_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'transformer/model.pt')
-# torch.jit.save(transformer_neuron, transformer_filename)
+# save compiled transformer
+transformer_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'transformer/model.pt')
+torch.jit.save(transformer_neuron, transformer_filename)
 
-# # delete unused objects
-# del transformer
-# del transformer_neuron
-
-# # --- Compile CLIP text encoder and save [PASS] ---
-
-# # Only keep the model being compiled in RAM to minimze memory pressure
-# vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32)
-# pipe = WanPipeline.from_pretrained(model_id, vae=vae, torch_dtype=DTYPE)
-# text_encoder = copy.deepcopy(pipe.text_encoder)
-# del pipe
-
-# # Apply the wrapper to deal with custom return type
-# text_encoder = NeuronTextEncoder(text_encoder)
-
-# # Compile text encoder
-# # This is used for indexing a lookup table in torch.nn.Embedding,
-# # so using random numbers may give errors (out of range).
-# emb = torch.tensor([[49406, 18376,   525,  7496, 49407,     0,     0,     0,     0,     0,
-#         0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-#         0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-#         0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-#         0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-#         0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-#         0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-#         0,     0,     0,     0,     0,     0,     0]])
-# text_encoder_neuron = torch_neuronx.trace(
-#         text_encoder.neuron_text_encoder, 
-#         emb, 
-#         compiler_workdir=os.path.join(COMPILER_WORKDIR_ROOT, 'text_encoder'),
-#         compiler_args=["--enable-fast-loading-neuron-binaries"]
-#         )
-
-# # Enable asynchronous loading to speed up model load
-# torch_neuronx.async_load(text_encoder_neuron)
-
-# # Save the compiled text encoder
-# text_encoder_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'text_encoder/model.pt')
-# torch.jit.save(text_encoder_neuron, text_encoder_filename)
-
-# # delete unused objects
-# del text_encoder
-# del text_encoder_neuron
+# delete unused objects
+del transformer
+del transformer_neuron
 
 
+# --- Compile CLIP text encoder and save [PASS] ---
 
-# --- Compile VAE decoder and save [NOT PASS] ---
+# Only keep the model being compiled in RAM to minimze memory pressure
+vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32)
+pipe = WanPipeline.from_pretrained(model_id, vae=vae, torch_dtype=DTYPE)
+text_encoder = copy.deepcopy(pipe.text_encoder)
+del pipe
+
+# Apply the wrapper to deal with custom return type
+text_encoder = NeuronTextEncoder(text_encoder)
+
+# Compile text encoder
+# This is used for indexing a lookup table in torch.nn.Embedding,
+# so using random numbers may give errors (out of range).
+emb = torch.tensor([[49406, 18376,   525,  7496, 49407,     0,     0,     0,     0,     0,
+        0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+        0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+        0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+        0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+        0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+        0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+        0,     0,     0,     0,     0,     0,     0]])
+text_encoder_neuron = torch_neuronx.trace(
+        text_encoder.neuron_text_encoder, 
+        emb, 
+        compiler_workdir=os.path.join(COMPILER_WORKDIR_ROOT, 'text_encoder'),
+        compiler_args=compiler_flags
+        )
+
+# Enable asynchronous loading to speed up model load
+torch_neuronx.async_load(text_encoder_neuron)
+
+# Save the compiled text encoder
+text_encoder_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'text_encoder/model.pt')
+torch.jit.save(text_encoder_neuron, text_encoder_filename)
+
+# delete unused objects
+del text_encoder
+del text_encoder_neuron
+
+
+# --- Compile VAE decoder and save [PASS] ---
 
 class WanUpsampleCPU(nn.Module):
     """
@@ -531,13 +533,16 @@ del pipe
 # replace_upsample_layers(decoder)
 # replace_upsample_layers_v2(decoder)
 
+compiler_flags = """ --verbose=INFO --target=trn1 --model-type=unet-inference --enable-fast-loading-neuron-binaries """ # Use these compiler flags for trn1/inf2
+os.environ["NEURON_CC_FLAGS"] = os.environ.get("NEURON_CC_FLAGS", "") + compiler_flags
+
 # Compile vae decoder
 decoder_in = torch.randn([batch_size, 16, frames, height, width], dtype=torch.float32)
 decoder_neuron = torch_neuronx.trace(
     decoder, 
     decoder_in, 
     compiler_workdir=os.path.join(COMPILER_WORKDIR_ROOT, 'vae_decoder'),
-    compiler_args=["--enable-fast-loading-neuron-binaries"]
+    compiler_args=compiler_flags
 )
 
 # Enable asynchronous loading to speed up model load
@@ -552,45 +557,45 @@ del decoder
 del decoder_neuron
 
 
-# # --- Compile VAE post_quant_conv and save [PASS] ---
+# --- Compile VAE post_quant_conv and save [PASS] ---
 
-# # Only keep the model being compiled in RAM to minimze memory pressure
-# vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32)
-# pipe = WanPipeline.from_pretrained(model_id, vae=vae, torch_dtype=DTYPE)
-# post_quant_conv = copy.deepcopy(pipe.vae.post_quant_conv)
-# del pipe
+# Only keep the model being compiled in RAM to minimze memory pressure
+vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32)
+pipe = WanPipeline.from_pretrained(model_id, vae=vae, torch_dtype=DTYPE)
+post_quant_conv = copy.deepcopy(pipe.vae.post_quant_conv)
+del pipe
 
-# # # Compile vae post_quant_conv
-# post_quant_conv_in = torch.randn([batch_size, 16, frames, height, width], dtype=torch.float32)
-# post_quant_conv_neuron = torch_neuronx.trace(
-#     post_quant_conv, 
-#     post_quant_conv_in,
-#     compiler_workdir=os.path.join(COMPILER_WORKDIR_ROOT, 'vae_post_quant_conv'),
-# )
+# # Compile vae post_quant_conv
+post_quant_conv_in = torch.randn([batch_size, 16, frames, height, width], dtype=torch.float32)
+post_quant_conv_neuron = torch_neuronx.trace(
+    post_quant_conv, 
+    post_quant_conv_in,
+    compiler_workdir=os.path.join(COMPILER_WORKDIR_ROOT, 'vae_post_quant_conv'),
+)
 
-# # Enable asynchronous loading to speed up model load
-# torch_neuronx.async_load(post_quant_conv_neuron)
+# Enable asynchronous loading to speed up model load
+torch_neuronx.async_load(post_quant_conv_neuron)
 
-# # # Save the compiled vae post_quant_conv
-# post_quant_conv_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'vae_post_quant_conv/model.pt')
-# torch.jit.save(post_quant_conv_neuron, post_quant_conv_filename)
+# # Save the compiled vae post_quant_conv
+post_quant_conv_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'vae_post_quant_conv/model.pt')
+torch.jit.save(post_quant_conv_neuron, post_quant_conv_filename)
 
-# # delete unused objects
-# del post_quant_conv
-# del post_quant_conv_neuron
+# delete unused objects
+del post_quant_conv
+del post_quant_conv_neuron
 
 
-# # --- Load all compiled models and run pipeline ---
-# COMPILER_WORKDIR_ROOT = 'wan2.1_t2v_compile_dir'
-# model_id = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
-# text_encoder_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'text_encoder/model.pt')
-# decoder_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'vae_decoder/model.pt')
-# transformer_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'transformer/model.pt')
-# post_quant_conv_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'vae_post_quant_conv/model.pt')
+# --- Load all compiled models and run pipeline ---
+COMPILER_WORKDIR_ROOT = 'wan2.1_t2v_compile_dir'
+model_id = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+text_encoder_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'text_encoder/model.pt')
+decoder_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'vae_decoder/model.pt')
+transformer_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'transformer/model.pt')
+post_quant_conv_filename = os.path.join(COMPILER_WORKDIR_ROOT, 'vae_post_quant_conv/model.pt')
 
-# vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32)
-# pipe = WanPipeline.from_pretrained(model_id, vae=vae, torch_dtype=DTYPE)
-# pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
+vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32)
+pipe = WanPipeline.from_pretrained(model_id, vae=vae, torch_dtype=DTYPE)
+pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
 
 # Load the compiled Transformer onto two neuron cores.
 pipe.transformer = NeuronTransformer(TransformerWrap(pipe.transformer))
