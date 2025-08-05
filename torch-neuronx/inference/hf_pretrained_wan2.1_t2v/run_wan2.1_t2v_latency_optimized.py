@@ -61,7 +61,7 @@ if __name__ == "__main__":
     vae_decoder_wrapper.model = torch_neuronx.DataParallel( 
         # torch.jit.load(decoder_model_path), [0, 1, 2, 3], False  # Use for trn2
         # torch.jit.load(decoder_model_path), [0, 1, 2, 3, 4, 5, 6, 7], False # Use for trn1/inf2
-        torch.jit.load(decoder_model_path)
+        torch.jit.load(decoder_model_path), [10, 11]
     )
     print('vae_decoder_wrapper.model end ****************')
     
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     vae_post_quant_conv_wrapper.model = torch_neuronx.DataParallel(
         # torch.jit.load(post_quant_conv_model_path), [0, 1, 2, 3], False # Use for trn2
         # torch.jit.load(post_quant_conv_model_path), [0, 1, 2, 3, 4, 5, 6, 7], False # Use for trn1/inf2
-        torch.jit.load(post_quant_conv_model_path)
+        torch.jit.load(post_quant_conv_model_path), [10, 11]
     )
     print('vae_post_quant_conv_wrapper.model end ****************')
     

@@ -1,4 +1,4 @@
-from diffusers import Transformer2DModel
+from diffusers.models.transformers.transformer_wan import WanTransformer3DModel
 from transformers.models.umt5 import UMT5EncoderModel
 from torch import nn
 
@@ -9,23 +9,23 @@ class InferenceTextEncoderWrapper(nn.Module):
         self.device = t.device
         self.t = t
     def forward(self, text_input_ids, attention_mask=None):
+        print('text_input_ids:', text_input_ids)
         return [self.t(text_input_ids, attention_mask)['last_hidden_state'].to(self.dtype)]
 
 class InferenceTransformerWrapper(nn.Module):
-    def __init__(self, transformer: Transformer2DModel):
+    def __init__(self, transformer: WanTransformer3DModel):
         super().__init__()
         self.transformer = transformer
         self.config = transformer.config
         self.dtype = transformer.dtype
         self.device = transformer.device
-    def forward(self, hidden_states, encoder_hidden_states=None, timestep=None, 
-                            encoder_attention_mask=None, added_cond_kwargs=None,
-                            return_dict=False):
+    def forward(self, hidden_states, timestep=None, encoder_hidden_states=None, return_dict=False):  # encoder_attention_mask=None, added_cond_kwargs=None,
         output = self.transformer(
             hidden_states, 
+            timestep,
             encoder_hidden_states, 
-            timestep, 
-            encoder_attention_mask)
+            # encoder_attention_mask
+        )
         return output
 
 class SimpleWrapper(nn.Module):
