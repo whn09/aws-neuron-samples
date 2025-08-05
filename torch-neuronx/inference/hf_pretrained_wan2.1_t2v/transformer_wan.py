@@ -60,6 +60,7 @@ class WanAttnProcessor2_0:
         key = attn.to_k(encoder_hidden_states)
         value = attn.to_v(encoder_hidden_states)
 
+        # TODO: comment this block for neuron compilation
         # if attn.norm_q is not None:
         #     query = attn.norm_q(query)
         # if attn.norm_k is not None:
@@ -69,6 +70,7 @@ class WanAttnProcessor2_0:
         key = key.unflatten(2, (attn.heads, -1)).transpose(1, 2)
         value = value.unflatten(2, (attn.heads, -1)).transpose(1, 2)
 
+        # TODO: comment this block for neuron compilation
         # if rotary_emb is not None:
 
         #     def apply_rotary_emb(hidden_states: torch.Tensor, freqs: torch.Tensor):

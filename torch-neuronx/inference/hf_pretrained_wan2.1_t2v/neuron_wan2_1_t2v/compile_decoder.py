@@ -42,7 +42,7 @@ def compile_decoder(args):
     
     batch_size = 1
     frames = 4  # default: 16
-    height, width = 32,32  # default: 96, 96
+    # height, width = 32,32  # default: 96, 96
     in_channels = 16
     
     model_id = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
@@ -53,7 +53,7 @@ def compile_decoder(args):
     upcast_norms_to_f32(decoder)
     
     with torch.no_grad():
-        sample_inputs = torch.rand((batch_size, in_channels, frames, height, width), dtype=torch.float32)
+        sample_inputs = torch.rand((batch_size, in_channels, frames, latent_height, latent_width), dtype=torch.float32)
         
         compiled_decoder = torch_neuronx.trace(
             decoder,
@@ -81,9 +81,8 @@ def compile_decoder(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--height", help="height of generated image.", type=int, default=1024)
-    parser.add_argument("--width", help="height of generated image.", type=int, default=1024)
-    parser.add_argument("--num_images_per_prompt", help="height of generated image.", type=int, default=1)
+    parser.add_argument("--height", help="height of generated video.", type=int, default=256)
+    parser.add_argument("--width", help="height of generated video.", type=int, default=256)
     parser.add_argument("--compiler_workdir", help="dir for compiler artifacts.", type=str, default="compiler_workdir")
     parser.add_argument("--compiled_models_dir", help="dir for compiled artifacts.", type=str, default="compiled_models")
     args = parser.parse_args()

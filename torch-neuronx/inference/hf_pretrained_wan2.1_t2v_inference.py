@@ -288,7 +288,7 @@ model_id = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
 
 # These dimensions need to be adjusted based on Wan2.1's expected input format
 batch_size = 1
-frames = 4  # default: 16  # typical frame count for video generation
+frames = 16  # default: 16  # typical frame count for video generation
 height, width = 32, 32  # default: 96, 96  # spatial dimensions
 in_channels = 16  # 根据配置，Wan使用16个输入通道
 

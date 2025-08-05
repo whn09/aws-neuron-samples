@@ -3,6 +3,7 @@ from diffusers.models.attention_processor import Attention
 from neuronx_distributed.parallel_layers import parallel_state
 from neuronx_distributed.parallel_layers.layers import ColumnParallelLinear, RowParallelLinear
 from transformers.models.t5.modeling_t5 import T5Attention, T5LayerFF
+from transformers.models.umt5.modeling_umt5 import UMT5Attention, UMT5LayerFF
 from neuronx_distributed.parallel_layers.pad import get_number_of_extra_heads, pad_model
 import neuronx_distributed.parallel_layers.utils as neuronx_dist_utils
 import torch
@@ -56,6 +57,71 @@ def shard_t5_self_attention(tp_degree: int, selfAttention: T5Attention):
     return selfAttention
 
 def shard_t5_ff(ff: T5LayerFF):
+    orig_wi_0 = ff.DenseReluDense.wi_0
+    ff.DenseReluDense.wi_0 = ColumnParallelLinear(
+        orig_wi_0.in_features,
+        orig_wi_0.out_features,
+        bias=False,
+        gather_output=False)
+    ff.DenseReluDense.wi_0.weight.data = get_sharded_data(orig_wi_0.weight.data, 0)
+    orig_wi_1 = ff.DenseReluDense.wi_1
+    ff.DenseReluDense.wi_1 = ColumnParallelLinear(
+        orig_wi_1.in_features,
+        orig_wi_1.out_features,
+        bias=False,
+        gather_output=False)
+    ff.DenseReluDense.wi_1.weight.data = get_sharded_data(orig_wi_1.weight.data, 0)
+    orig_wo = ff.DenseReluDense.wo
+    ff.DenseReluDense.wo = RowParallelLinear(
+        orig_wo.in_features,
+        orig_wo.out_features,
+        bias=False,
+        input_is_parallel=True)
+    ff.DenseReluDense.wo.weight.data = get_sharded_data(orig_wo.weight.data, 1)
+    ff.DenseReluDense.act = torch.nn.GELU(approximate="tanh")
+    return ff
+
+def shard_umt5_self_attention(tp_degree: int, selfAttention: UMT5Attention):
+    orig_inner_dim = selfAttention.q.out_features
+    dim_head = orig_inner_dim // selfAttention.n_heads
+    original_nheads = selfAttention.n_heads
+    selfAttention.n_heads = selfAttention.n_heads // tp_degree
+    selfAttention.inner_dim = dim_head * selfAttention.n_heads
+    orig_q = selfAttention.q
+    selfAttention.q = ColumnParallelLinear(
+        selfAttention.q.in_features,
+        selfAttention.q.out_features,
+        bias=False, 
+        gather_output=False)
+    selfAttention.q.weight.data = get_sharded_data(orig_q.weight.data, 0)
+    del(orig_q)
+    orig_k = selfAttention.k
+    selfAttention.k = ColumnParallelLinear(
+        selfAttention.k.in_features, 
+        selfAttention.k.out_features, 
+        bias=(selfAttention.k.bias is not None),
+        gather_output=False)
+    selfAttention.k.weight.data = get_sharded_data(orig_k.weight.data, 0)
+    del(orig_k)
+    orig_v = selfAttention.v
+    selfAttention.v = ColumnParallelLinear(
+        selfAttention.v.in_features, 
+        selfAttention.v.out_features, 
+        bias=(selfAttention.v.bias is not None),
+        gather_output=False)
+    selfAttention.v.weight.data = get_sharded_data(orig_v.weight.data, 0)
+    del(orig_v)
+    orig_out = selfAttention.o
+    selfAttention.o = RowParallelLinear(
+        selfAttention.o.in_features,
+        selfAttention.o.out_features,
+        bias=(selfAttention.o.bias is not None),
+        input_is_parallel=True)
+    selfAttention.o.weight.data = get_sharded_data(orig_out.weight.data, 1)
+    del(orig_out)
+    return selfAttention
+
+def shard_umt5_ff(ff: UMT5LayerFF):
     orig_wi_0 = ff.DenseReluDense.wi_0
     ff.DenseReluDense.wi_0 = ColumnParallelLinear(
         orig_wi_0.in_features,
