@@ -50,7 +50,10 @@ class SimpleWrapper(nn.Module):
         super().__init__()
         self.model = model
     def forward(self, x):
+        print('self.model:', self.model)
+        print('x:', x.shape, x)
         output = self.model(x)
+        print('output:', output.shape, output)
         return output
 
 import torch

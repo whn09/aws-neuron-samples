@@ -52,11 +52,84 @@ class TracingTransformerWrapper(nn.Module):
         # added_cond_kwargs={"resolution": None, "aspect_ratio": None},
         return_dict=False)
 
+class WanSelfAttentionProcessorSharded:
+    """自定义的 attention processor，支持分片的 RMSNorm"""
+    
+    def __init__(self, tp_degree=1):
+        self.tp_degree = tp_degree
+    
+    def __call__(
+        self,
+        attn,
+        hidden_states,
+        encoder_hidden_states=None,
+        attention_mask=None,
+        **kwargs,
+    ):
+        rotary_emb = kwargs.get("rotary_emb", None)
+        
+        input_hidden_states = hidden_states
+        
+        batch_size, sequence_length, _ = hidden_states.shape
+        
+        # 获取 query, key, value
+        query = attn.to_q(hidden_states)
+        key = attn.to_k(hidden_states)
+        value = attn.to_v(hidden_states)
+        
+        # 应用 RMSNorm，但跳过维度检查
+        if hasattr(attn, 'norm_q'):
+            # 直接应用 norm，不检查维度
+            query = query.float()
+            variance = query.pow(2).mean(-1, keepdim=True)
+            query = query * torch.rsqrt(variance + attn.norm_q.eps)
+            if hasattr(attn.norm_q, 'weight'):
+                query = query * attn.norm_q.weight
+            query = query.to(hidden_states.dtype)
+        
+        if hasattr(attn, 'norm_k'):
+            key = key.float()
+            variance = key.pow(2).mean(-1, keepdim=True)
+            key = key * torch.rsqrt(variance + attn.norm_k.eps)
+            if hasattr(attn.norm_k, 'weight'):
+                key = key * attn.norm_k.weight
+            key = key.to(hidden_states.dtype)
+        
+        # Reshape for attention
+        inner_dim = key.shape[-1]
+        head_dim = inner_dim // attn.heads
+        
+        query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        
+        # Apply rotary embeddings if provided
+        if rotary_emb is not None:
+            query = apply_rotary_pos_emb(query, rotary_emb)
+            key = apply_rotary_pos_emb(key, rotary_emb)
+        
+        # Compute attention
+        hidden_states = F.scaled_dot_product_attention(
+            query, key, value, 
+            attn_mask=attention_mask, 
+            dropout_p=0.0, 
+            is_causal=False
+        )
+        
+        hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, inner_dim)
+        hidden_states = attn.to_out[0](hidden_states)
+        hidden_states = attn.to_out[1](hidden_states)
+        
+        return hidden_states + input_hidden_states
+
 def get_transformer_model(tp_degree: int):
     DTYPE = torch.bfloat16
     model_id = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
     vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32, cache_dir="wan2.1_t2v_hf_cache_dir")
     pipe = WanPipeline.from_pretrained(model_id, vae=vae, torch_dtype=DTYPE, cache_dir="wan2.1_t2v_hf_cache_dir")
+    
+    # 创建自定义 processor
+    sharded_processor = WanSelfAttentionProcessorSharded(tp_degree)
     
     # 分片所有30个blocks
     for block_idx, block in enumerate(pipe.transformer.blocks):
@@ -65,6 +138,20 @@ def get_transformer_model(tp_degree: int):
         # 分片attention层
         block.attn1 = shard_transformer_attn(tp_degree, block.attn1)
         block.attn2 = shard_transformer_attn(tp_degree, block.attn2)
+        
+        # 设置自定义 processor
+        block.attn1.processor = sharded_processor
+        block.attn2.processor = sharded_processor
+        
+        # 如果需要，手动处理 norm 层权重（简单删除或设置为 None）
+        if tp_degree > 1:
+            if hasattr(block.attn1, 'norm_q'):
+                # 可以选择删除 norm 层或设置权重为合适的值
+                delattr(block.attn1, 'norm_q')
+                delattr(block.attn1, 'norm_k')
+            if hasattr(block.attn2, 'norm_q'):
+                delattr(block.attn2, 'norm_q')
+                delattr(block.attn2, 'norm_k')
 
         # 分片feedforward层
         block.ffn = shard_transformer_feedforward(block.ffn)
@@ -74,8 +161,8 @@ def get_transformer_model(tp_degree: int):
 
 def compile_transformer(args):
     # tp_degree = 4
-    tp_degree = 1 # Use tensor parallel degree as 8 for trn1/inf2, default: 8
-    os.environ["LOCAL_WORLD_SIZE"] = "4" # Use tensor parallel degree as 4 for trn2
+    tp_degree = 8 # Use tensor parallel degree as 8 for trn1/inf2, default: 8
+    os.environ["LOCAL_WORLD_SIZE"] = "8" # Use tensor parallel degree as 4 for trn2
     latent_height = args.height//8
     latent_width = args.width//8
     num_prompts = 1
@@ -85,7 +172,7 @@ def compile_transformer(args):
     compiler_workdir = args.compiler_workdir
     compiled_models_dir = args.compiled_models_dir
     batch_size = 1
-    frames = 1  # default: 16
+    frames = 21  # default: 16
     # height, width = 32, 32  # default: 96, 96
     in_channels = 16
     sample_hidden_states = torch.ones((batch_size, in_channels, frames, latent_height, latent_width), dtype=torch.bfloat16)
