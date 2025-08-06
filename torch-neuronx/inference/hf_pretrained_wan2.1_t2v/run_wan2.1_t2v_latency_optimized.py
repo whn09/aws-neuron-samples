@@ -27,8 +27,8 @@ if __name__ == "__main__":
     transformer_model_path = f"{COMPILED_MODELS_DIR}/transformer" 
     decoder_model_path = f"{COMPILED_MODELS_DIR}/decoder/model.pt"
     post_quant_conv_model_path = f"{COMPILED_MODELS_DIR}/post_quant_conv/model.pt"
-
-    seqlen=300
+    
+    seqlen=77  # default: 300
     text_encoder_wrapper = InferenceTextEncoderWrapper(
         torch.bfloat16, pipe.text_encoder, seqlen
     )
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     # text_encoder_wrapper.t = torch_neuronx.DataParallel( 
     #     # torch.jit.load(os.path.join(text_encoder_model_path, 'model.pt')), [0, 1, 2, 3], False  # Use for trn2
     #     # torch.jit.load(os.path.join(text_encoder_model_path, 'model.pt')), [0, 1, 2, 3, 4, 5, 6, 7], False # Use for trn1/inf2
-    #     torch.jit.load(os.path.join(text_encoder_model_path, 'model.pt'))
+    #     torch.jit.load(os.path.join(text_encoder_model_path, 'model.pt'), [1])  # model.pt
     # )
     print('text_encoder_wrapper.t end ****************')
 
@@ -89,7 +89,8 @@ if __name__ == "__main__":
         height=256,  # default: 480
         width=256,  # default: 832
         num_frames=81,
-        guidance_scale=5.0
+        guidance_scale=5.0,
+        max_sequence_length=seqlen  # default: 512
     ).frames[0]
     end = time.time()
     print('warmup time:', end-start)
@@ -101,7 +102,8 @@ if __name__ == "__main__":
         height=256,  # default: 480
         width=256,  # default: 832
         num_frames=81,
-        guidance_scale=5.0
+        guidance_scale=5.0,
+        max_sequence_length=seqlen  # default: 512
     ).frames[0]
     end = time.time()
     print('time:', end-start)

@@ -9,11 +9,13 @@ python neuron_wan2_1_t2v/cache_hf_model.py
 
 echo "compiling text encoder"
 python neuron_wan2_1_t2v/compile_text_encoder.py \
---compiled_models_dir "compile_workdir_latency_optimized"
+--compiled_models_dir "compile_workdir_latency_optimized" \
+--max_sequence_length 77
 
 echo "compiling transformer"
 python neuron_wan2_1_t2v/compile_transformer_latency_optimized.py \
---compiled_models_dir "compile_workdir_latency_optimized"
+--compiled_models_dir "compile_workdir_latency_optimized" \
+--max_sequence_length 77
 
 echo "compiling decoder"
 python neuron_wan2_1_t2v/compile_decoder.py \

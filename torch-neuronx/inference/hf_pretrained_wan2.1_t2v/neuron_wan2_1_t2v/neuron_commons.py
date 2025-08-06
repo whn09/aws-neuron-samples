@@ -1,6 +1,7 @@
 from diffusers.models.transformers.transformer_wan import WanTransformer3DModel
 from transformers.models.umt5 import UMT5EncoderModel
 from torch import nn
+from types import SimpleNamespace
 
 class InferenceTextEncoderWrapper(nn.Module):
     def __init__(self, dtype, t: UMT5EncoderModel, seqlen: int):
@@ -9,8 +10,15 @@ class InferenceTextEncoderWrapper(nn.Module):
         self.device = t.device
         self.t = t
     def forward(self, text_input_ids, attention_mask=None):
-        print('text_input_ids:', text_input_ids)
-        return [self.t(text_input_ids, attention_mask)['last_hidden_state'].to(self.dtype)]
+        # print('self.dtype:', self.dtype)
+        # print('self.device:', self.device)
+        # print('self.t:', self.t)
+        # print('text_input_ids:', text_input_ids)
+        # print('attention_mask:', attention_mask)
+        result = self.t(text_input_ids)  # , attention_mask
+        # print('result:', type(result), result)
+        # return [result['last_hidden_state'].to(self.dtype)]
+        return SimpleNamespace(last_hidden_state=result['last_hidden_state'].to(self.dtype))
 
 class InferenceTransformerWrapper(nn.Module):
     def __init__(self, transformer: WanTransformer3DModel):
@@ -19,13 +27,22 @@ class InferenceTransformerWrapper(nn.Module):
         self.config = transformer.config
         self.dtype = transformer.dtype
         self.device = transformer.device
-    def forward(self, hidden_states, timestep=None, encoder_hidden_states=None, return_dict=False):  # encoder_attention_mask=None, added_cond_kwargs=None,
+    def forward(self, hidden_states, timestep=None, encoder_hidden_states=None, return_dict=False, **kwargs):  # encoder_attention_mask=None, added_cond_kwargs=None,
+        print('self.config:', self.config)
+        print('self.dtype:', self.dtype)
+        print('self.device:', self.device)
+        print('self.transformer:', self.transformer)
+        print('hidden_states:', hidden_states.shape, hidden_states)
+        print('timestep:', timestep)
+        print('encoder_hidden_states:', encoder_hidden_states.shape, encoder_hidden_states)
+        print('kwargs:', kwargs)
         output = self.transformer(
             hidden_states, 
             timestep,
             encoder_hidden_states, 
             # encoder_attention_mask
         )
+        print('output:', output)
         return output
 
 class SimpleWrapper(nn.Module):
