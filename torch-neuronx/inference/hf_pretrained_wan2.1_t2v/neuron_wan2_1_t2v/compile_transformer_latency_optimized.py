@@ -85,7 +85,7 @@ def compile_transformer(args):
     compiler_workdir = args.compiler_workdir
     compiled_models_dir = args.compiled_models_dir
     batch_size = 1
-    frames = 4  # default: 16
+    frames = 1  # default: 16
     # height, width = 32, 32  # default: 96, 96
     in_channels = 16
     sample_hidden_states = torch.ones((batch_size, in_channels, frames, latent_height, latent_width), dtype=torch.bfloat16)
