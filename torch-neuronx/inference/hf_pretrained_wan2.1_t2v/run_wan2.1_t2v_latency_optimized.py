@@ -17,7 +17,7 @@ COMPILED_MODELS_DIR = "compile_workdir_latency_optimized"
 HUGGINGFACE_CACHE_DIR = "wan2.1_t2v_hf_cache_dir"
 
 if __name__ == "__main__":
-    os.environ["LOCAL_WORLD_SIZE"] = "8"
+    # os.environ["LOCAL_WORLD_SIZE"] = "8"
     
     DTYPE=torch.bfloat16
     model_id = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
@@ -61,8 +61,8 @@ if __name__ == "__main__":
     vae_decoder_wrapper = SimpleWrapper(pipe.vae.decoder)
     print('vae_decoder_wrapper.model start ****************')
     vae_decoder_wrapper.model = torch_neuronx.DataParallel( 
-        # torch.jit.load(decoder_model_path), [0, 1, 2, 3], False  # Use for trn2
-        torch.jit.load(decoder_model_path), [0, 1, 2, 3, 4, 5, 6, 7], False # Use for trn1/inf2
+        torch.jit.load(decoder_model_path), [0, 1, 2, 3], False  # Use for trn2
+        # torch.jit.load(decoder_model_path), [0, 1, 2, 3, 4, 5, 6, 7], False # Use for trn1/inf2
         # torch.jit.load(decoder_model_path),
     )
     print('vae_decoder_wrapper.model end ****************')
@@ -70,8 +70,8 @@ if __name__ == "__main__":
     vae_post_quant_conv_wrapper = SimpleWrapper(pipe.vae.post_quant_conv)
     print('vae_post_quant_conv_wrapper.model start ****************')
     vae_post_quant_conv_wrapper.model = torch_neuronx.DataParallel(
-        # torch.jit.load(post_quant_conv_model_path), [0, 1, 2, 3], False # Use for trn2
-        torch.jit.load(post_quant_conv_model_path), [0, 1, 2, 3, 4, 5, 6, 7], False # Use for trn1/inf2
+        torch.jit.load(post_quant_conv_model_path), [0, 1, 2, 3], False # Use for trn2
+        # torch.jit.load(post_quant_conv_model_path), [0, 1, 2, 3, 4, 5, 6, 7], False # Use for trn1/inf2
         # torch.jit.load(post_quant_conv_model_path),
     )
     print('vae_post_quant_conv_wrapper.model end ****************')
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     pipe.vae.decoder = vae_decoder_wrapper
     pipe.vae.post_quant_conv = vae_post_quant_conv_wrapper
     
-    os.environ["LOCAL_WORLD_SIZE"] = "8"
+    # os.environ["LOCAL_WORLD_SIZE"] = "8"
     
     prompt = "A cat walks on the grass, realistic"
     negative_prompt = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"

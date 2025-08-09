@@ -12,4 +12,4 @@ python neuron_pixart_sigma/compile_transformer_latency_optimized.py \
 
 echo "compiling decoder"
 python neuron_pixart_sigma/compile_decoder.py \
---compiled_models_dir "compile_workdir_latency_optimized"sh 
+--compiled_models_dir "compile_workdir_latency_optimized"

@@ -42,14 +42,14 @@ if __name__ == "__main__":
 
     vae_decoder_wrapper = SimpleWrapper(pipe.vae.decoder)
     vae_decoder_wrapper.model = torch_neuronx.DataParallel( 
-        # torch.jit.load(decoder_model_path), [0, 1, 2, 3], False  # Use for trn2
-        torch.jit.load(decoder_model_path), [0, 1, 2, 3, 4, 5, 6, 7], False # Use for trn1/inf2
+        torch.jit.load(decoder_model_path), [0, 1, 2, 3], False  # Use for trn2
+        # torch.jit.load(decoder_model_path), [0, 1, 2, 3, 4, 5, 6, 7], False # Use for trn1/inf2
     )
     
     vae_post_quant_conv_wrapper = SimpleWrapper(pipe.vae.post_quant_conv)
     vae_post_quant_conv_wrapper.model = torch_neuronx.DataParallel(
-        # torch.jit.load(post_quant_conv_model_path), [0, 1, 2, 3], False # Use for trn2
-        torch.jit.load(post_quant_conv_model_path), [0, 1, 2, 3, 4, 5, 6, 7], False # Use for trn1/inf2
+        torch.jit.load(post_quant_conv_model_path), [0, 1, 2, 3], False # Use for trn2
+        # torch.jit.load(post_quant_conv_model_path), [0, 1, 2, 3, 4, 5, 6, 7], False # Use for trn1/inf2
     )
     
     pipe.text_encoder = text_encoder_wrapper

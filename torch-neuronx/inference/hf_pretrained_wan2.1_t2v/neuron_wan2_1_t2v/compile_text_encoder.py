@@ -1,10 +1,10 @@
 import os
 os.environ["NEURON_FUSE_SOFTMAX"] = "1"
 os.environ["NEURON_CUSTOM_SILU"] = "1"
-# os.environ["NEURON_RT_VIRTUAL_CORE_SIZE"] = "2" # Comment this line out if using trn1/inf2
-# os.environ["NEURON_LOGICAL_NC_CONFIG"] = "2" # Comment this line out if using trn1/inf2
-# compiler_flags = """ --verbose=INFO --target=trn2 --lnc=2 --model-type=unet-inference --enable-fast-loading-neuron-binaries """ # Use these compiler flags for trn2
-compiler_flags = """ --verbose=INFO --target=trn1 --model-type=unet-inference --enable-fast-loading-neuron-binaries """ # Use these compiler flags for trn1/inf2
+os.environ["NEURON_RT_VIRTUAL_CORE_SIZE"] = "2" # Comment this line out if using trn1/inf2
+os.environ["NEURON_LOGICAL_NC_CONFIG"] = "2" # Comment this line out if using trn1/inf2
+compiler_flags = """ --verbose=INFO --target=trn2 --lnc=2 --model-type=unet-inference --enable-fast-loading-neuron-binaries """ # Use these compiler flags for trn2
+# compiler_flags = """ --verbose=INFO --target=trn1 --model-type=unet-inference --enable-fast-loading-neuron-binaries """ # Use these compiler flags for trn1/inf2
 os.environ["NEURON_CC_FLAGS"] = os.environ.get("NEURON_CC_FLAGS", "") + compiler_flags
 
 import copy
@@ -102,19 +102,19 @@ def get_text_encoder(tp_degree: int, sequence_length: int):
 def compile_text_encoder(args):
     batch_size = 1 # batch_size = args.num_prompts
     sequence_length = args.max_sequence_length
-    # tp_degree = 4 # Use tensor parallel degree as 4 for trn2
-    # os.environ["LOCAL_WORLD_SIZE"] = "4"
-    tp_degree = 8 # Use tensor parallel degree as 8 for trn1/inf2, default: 8
-    os.environ["LOCAL_WORLD_SIZE"] = "8"
+    tp_degree = 4 # Use tensor parallel degree as 4 for trn2
+    os.environ["LOCAL_WORLD_SIZE"] = "4"
+    # tp_degree = 8 # Use tensor parallel degree as 8 for trn1/inf2, default: 8
+    # os.environ["LOCAL_WORLD_SIZE"] = "8"
     get_text_encoder_f = partial(get_text_encoder, tp_degree, sequence_length)
     
     compiler_workdir = args.compiler_workdir
     compiled_models_dir = args.compiled_models_dir
     
     with torch.no_grad():
-        # sample_inputs = torch.ones((batch_size, sequence_length), dtype=torch.int64), \
-        #     torch.ones((batch_size, sequence_length), dtype=torch.int64)
-        sample_inputs = torch.tensor([[49406, 18376, 525, 7496, 49407] + [0] * (sequence_length - 5)], dtype=torch.int64)
+        sample_inputs = torch.ones((batch_size, sequence_length), dtype=torch.int64), \
+            torch.ones((batch_size, sequence_length), dtype=torch.int64)
+        # sample_inputs = torch.tensor([[49406, 18376, 525, 7496, 49407] + [0] * (sequence_length - 5)], dtype=torch.int64)
         
         compiled_text_encoder = neuronx_distributed.trace.parallel_model_trace(
             get_text_encoder_f,
