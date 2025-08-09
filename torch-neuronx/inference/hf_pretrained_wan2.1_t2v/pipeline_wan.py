@@ -318,7 +318,7 @@ class WanPipeline(DiffusionPipeline, WanLoraLoaderMixin):
             return latents.to(device=device, dtype=dtype)
 
         # num_latent_frames = (num_frames - 1) // self.vae_scale_factor_temporal + 1
-        num_latent_frames = 1  # TODO fix to 1
+        num_latent_frames = 4  # TODO fix to 4
         shape = (
             batch_size,
             num_channels_latents,
