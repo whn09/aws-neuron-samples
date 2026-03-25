@@ -19,6 +19,22 @@ This project implements [Wan2.2-TI2V-5B](https://huggingface.co/Wan-AI/Wan2.2-TI
 - CFG Parallel is faster for most configs (up to -13%). At 640x480/81f the doubled attention compute outweighs the communication savings.
 - Timing is pure inference (excludes model loading and warmup). See `test_results.txt`, `test_results_gpu.txt`, and `test_results_a10g.txt`.
 
+### A10G 8-GPU Multi-GPU Results (g5.48xlarge)
+
+Tested 8x A10G (g5.48xlarge, 192GB total VRAM) using the [Wan2.2 official codebase](https://github.com/Wan-AI/Wan2.2) with FSDP + Ulysses Sequence Parallel (`torchrun --nproc_per_node=8`, `--dit_fsdp`, `--t5_fsdp`, `--ulysses_size=8`).
+
+| Resolution | Frames | 8x A10G FSDP+SP (s) | Per-step (s) | Status |
+|-----------|--------|---------------------|-------------|--------|
+| 832x480 | 81 | 965 | ~19.3 | OK |
+| 832x480 | 121 | 1,024 | ~20.5 | OK |
+| 1280x704 | 81 | - | - | OOM (VAE decode) |
+| 1280x704 | 121 | - | - | OOM (VAE decode) |
+
+- **8x A10G is ~9.3x slower per step** than single A10G with diffusers (~19.3s vs ~2.08s/step). PCIe-only interconnect (no NVLink) makes FSDP all-gather communication dominate over compute savings.
+- **Single A10G with Wan2.2 official code OOMs** on all resolutions — the official code loads all models (T5 + transformer + VAE) onto GPU simultaneously, exceeding 24GB VRAM.
+- **1280x704 OOMs during VAE decode** — denoising completes but VAE is not distributed, so rank 0 must decode the full-resolution latent on a single 24GB GPU.
+- **Conclusion**: Multi-GPU A10G via PCIe is impractical for video generation. For cost-effective GPU inference, use a single H100 (80GB) or Trainium2.
+
 ## Quick Start
 
 ```bash
@@ -227,7 +243,8 @@ Implementation: `DecoderWrapperV3Tiled` in `neuron_wan2_2_ti2v/neuron_commons.py
 |------|-------------|
 | `run_wan2.2_ti2v.py` | Inference script (T2V and I2V) |
 | `run_wan2.2_ti2v_gpu.py` | GPU inference script (H100 benchmark) |
-| `bench_a10g.py` | A10G benchmark (text encoder on CPU, transformer+VAE on GPU) |
+| `bench_a10g.py` | A10G single-GPU benchmark (g5.8xlarge, text encoder on CPU) |
+| `bench_a10g_8gpu.py` | A10G 8-GPU benchmark (g5.48xlarge, FSDP+SP via Wan2.2 official code) |
 
 ### Wrappers and Utilities (`neuron_wan2_2_ti2v/`)
 
