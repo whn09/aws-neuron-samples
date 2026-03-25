@@ -1,0 +1,15 @@
+Wan2.2 TI2V A10G Benchmark Results
+GPU: NVIDIA A10G (g5.8xlarge, 24GB VRAM, 128GB RAM)
+Date: Tue Mar 25 00:30:00 UTC 2026
+Steps: 50, Guidance: 5.0, Seed: 42
+Note: Text encoder runs on CPU (~432s per call, excluded from timing below).
+      Transformer (~10GB bf16) + VAE (~2.6GB fp32) on GPU. No model offloading.
+==========================================
+Resolution   FPS      Frames   Warmup(s)    Inference(s) Status
+----------------------------------------------------------
+512x384      16       81       117.21       116.96       ok
+512x384      24       121      180.46       180.45       ok
+640x480      16       81       187.07       186.95       ok
+640x480      24       121      290.15       290.18       ok
+1280x704     16       81       -            -            OOM
+1280x704     24       121      -            -            OOM

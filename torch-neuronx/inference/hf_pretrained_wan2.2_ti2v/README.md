@@ -2,21 +2,22 @@
 
 This project implements [Wan2.2-TI2V-5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers) video generation on AWS Trainium2 (trn2.48xlarge) using the AWS Neuron SDK. Supports multiple resolutions from 512x384 up to 1280x704 (720P) with text-to-video and image-to-video generation.
 
-## Multi-Resolution Performance (trn2.48xlarge vs H100)
+## Multi-Resolution Performance (trn2.48xlarge vs H100 vs A10G)
 
-| Resolution | FPS | Frames | Trn2 CP (s) | Trn2 CFG (s) | H100 (s) | Decoder |
-|-----------|-----|--------|-------------|--------------|-----------|---------|
-| 512x384 | 16 | 81 | 20.67 | **18.32** | 16.13 | stateful rolling |
-| 512x384 | 24 | 121 | 30.07 | **26.44** | 24.48 | stateful rolling |
-| 640x480 | 16 | 81 | **33.20** | 34.10 | 26.06 | stateful rolling |
-| 640x480 | 24 | 121 | 49.29 | **45.15** | 39.67 | stateful rolling |
-| 1280x704 | 16 | 81 | 163.99 | **155.06** | 87.66 | tiled |
-| 1280x704 | 24 | 121 | 255.07 | **243.71** | 143.20 | tiled |
+| Resolution | FPS | Frames | Trn2 CP (s) | Trn2 CFG (s) | H100 (s) | A10G (s) | Decoder |
+|-----------|-----|--------|-------------|--------------|-----------|----------|---------|
+| 512x384 | 16 | 81 | 20.67 | **18.32** | 16.13 | 116.96 | stateful rolling |
+| 512x384 | 24 | 121 | 30.07 | **26.44** | 24.48 | 180.45 | stateful rolling |
+| 640x480 | 16 | 81 | **33.20** | 34.10 | 26.06 | 186.95 | stateful rolling |
+| 640x480 | 24 | 121 | 49.29 | **45.15** | 39.67 | 290.18 | stateful rolling |
+| 1280x704 | 16 | 81 | 163.99 | **155.06** | 87.66 | OOM | tiled |
+| 1280x704 | 24 | 121 | 255.07 | **243.71** | 143.20 | OOM | tiled |
 
 - **Trn2 CP**: Context Parallel (CP=2, sequence split across ranks, K/V all-gather in self-attention)
 - **Trn2 CFG**: CFG Parallel (batch=2, cond+uncond in single forward pass, no K/V communication)
+- **A10G**: g5.8xlarge (24GB VRAM). Text encoder runs on CPU (~432s per call, excluded from timing). Transformer (bf16) + VAE (fp32) on GPU, no model offloading. 720P exceeds 24GB VRAM.
 - CFG Parallel is faster for most configs (up to -13%). At 640x480/81f the doubled attention compute outweighs the communication savings.
-- Timing is pure inference (excludes model loading and warmup). See `test_results.txt` and `test_results_gpu.txt`.
+- Timing is pure inference (excludes model loading and warmup). See `test_results.txt`, `test_results_gpu.txt`, and `test_results_a10g.txt`.
 
 ## Quick Start
 
@@ -80,6 +81,18 @@ Video Output (512x512, 81 frames)
 | Cache reset | ~0.5s | Parallel write zeros to 34 on-device buffers |
 | post_quant_conv | ~0.003s | Single call |
 | **Total** | **~18s** | CFG Parallel + Stateful rolling cache |
+
+### Performance Breakdown (512x384, 81 frames, A10G g5.8xlarge)
+
+| Component | Time | Details |
+|-----------|------|---------|
+| Text Encoder | ~432s | UMT5 on CPU (excluded from inference timing) |
+| Transformer | ~104s | 50 steps @ 2.08s/step (bf16, single GPU) |
+| VAE Decoder | ~13s | diffusers default chunked decode |
+| **Total** | **~117s** | Text encoder on CPU, transformer+VAE on GPU |
+
+- A10G is ~7.3x slower than H100 per denoising step, consistent with the compute gap (H100: 990 TFLOPS bf16 vs A10G: 125 TFLOPS bf16).
+- Text encoder (UMT5, ~4.7B params) runs on CPU because A10G 24GB VRAM cannot fit all three models simultaneously. Each prompt encoding takes ~432s on CPU vs ~0.06s on GPU.
 
 ## Compilation
 
@@ -213,6 +226,8 @@ Implementation: `DecoderWrapperV3Tiled` in `neuron_wan2_2_ti2v/neuron_commons.py
 | File | Description |
 |------|-------------|
 | `run_wan2.2_ti2v.py` | Inference script (T2V and I2V) |
+| `run_wan2.2_ti2v_gpu.py` | GPU inference script (H100 benchmark) |
+| `bench_a10g.py` | A10G benchmark (text encoder on CPU, transformer+VAE on GPU) |
 
 ### Wrappers and Utilities (`neuron_wan2_2_ti2v/`)
 
