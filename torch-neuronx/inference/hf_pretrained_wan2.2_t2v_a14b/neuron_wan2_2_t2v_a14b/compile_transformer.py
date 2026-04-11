@@ -128,15 +128,21 @@ def nki_flash_attention(query, key, value):
     k = key.clone().permute(0, 1, 3, 2).reshape((bs * n_head, d_head, k_aligned))
     v = value.clone().reshape((bs * n_head, k_aligned, d_head))
 
-    attn_output = torch.zeros((bs * n_head, q_aligned, d_head), dtype=torch.bfloat16, device=q.device)
+    attn_output = torch.zeros(
+        (bs * n_head, q_aligned, d_head), dtype=torch.bfloat16, device=q.device
+    )
     scale = 1 / math.sqrt(d_head)
 
     vc_size = int(os.getenv("NEURON_RT_VIRTUAL_CORE_SIZE", "1"))
     if vc_size == 2:
         grid = (nc(2),)
-        _flash_fwd_call[grid](q, k, v, scale, attn_output, kernel_name="AttentionMMSoftmaxMMWithoutSwap")
+        _flash_fwd_call[grid](
+            q, k, v, scale, attn_output, kernel_name="AttentionMMSoftmaxMMWithoutSwap"
+        )
     else:
-        _flash_fwd_call(q, k, v, scale, attn_output, kernel_name="AttentionMMSoftmaxMMWithoutSwap")
+        _flash_fwd_call(
+            q, k, v, scale, attn_output, kernel_name="AttentionMMSoftmaxMMWithoutSwap"
+        )
 
     output = attn_output.reshape((bs, n_head, q_aligned, d_head))
 
@@ -205,7 +211,9 @@ class CPWanSelfAttention(nn.Module):
     K/V are all-gathered across CP group before attention.
     """
 
-    def __init__(self, orig_attn, context_parallel_enabled=False, data_parallel_group=None):
+    def __init__(
+        self, orig_attn, context_parallel_enabled=False, data_parallel_group=None
+    ):
         super().__init__()
 
         self.context_parallel_enabled = context_parallel_enabled
@@ -217,9 +225,11 @@ class CPWanSelfAttention(nn.Module):
         self.to_v = orig_attn.to_v
         self.to_out = orig_attn.to_out
 
-        self.norm_q = orig_attn.norm_q if hasattr(orig_attn, 'norm_q') else None
-        self.norm_k = orig_attn.norm_k if hasattr(orig_attn, 'norm_k') else None
-        self.inner_dim = orig_attn.inner_dim if hasattr(orig_attn, 'inner_dim') else None
+        self.norm_q = orig_attn.norm_q if hasattr(orig_attn, "norm_q") else None
+        self.norm_k = orig_attn.norm_k if hasattr(orig_attn, "norm_k") else None
+        self.inner_dim = (
+            orig_attn.inner_dim if hasattr(orig_attn, "inner_dim") else None
+        )
 
     def forward(
         self,
@@ -287,9 +297,11 @@ class CPWanCrossAttention(nn.Module):
         self.to_v = orig_attn.to_v
         self.to_out = orig_attn.to_out
 
-        self.norm_q = orig_attn.norm_q if hasattr(orig_attn, 'norm_q') else None
-        self.norm_k = orig_attn.norm_k if hasattr(orig_attn, 'norm_k') else None
-        self.inner_dim = orig_attn.inner_dim if hasattr(orig_attn, 'inner_dim') else None
+        self.norm_q = orig_attn.norm_q if hasattr(orig_attn, "norm_q") else None
+        self.norm_k = orig_attn.norm_k if hasattr(orig_attn, "norm_k") else None
+        self.inner_dim = (
+            orig_attn.inner_dim if hasattr(orig_attn, "inner_dim") else None
+        )
 
     def forward(
         self,
@@ -353,10 +365,11 @@ def shard_attention_for_cp(tp_degree: int, attn: Attention):
     # Shard Q projection
     orig_q = attn.to_q
     attn.to_q = ColumnParallelLinear(
-        orig_q.in_features, orig_q.out_features,
+        orig_q.in_features,
+        orig_q.out_features,
         bias=(orig_q.bias is not None),
         gather_output=False,
-        dtype=torch.bfloat16
+        dtype=torch.bfloat16,
     )
     attn.to_q.weight.data = get_sharded_data(orig_q.weight.data, 0)
     if orig_q.bias is not None:
@@ -366,10 +379,11 @@ def shard_attention_for_cp(tp_degree: int, attn: Attention):
     # Shard K projection
     orig_k = attn.to_k
     attn.to_k = ColumnParallelLinear(
-        orig_k.in_features, orig_k.out_features,
+        orig_k.in_features,
+        orig_k.out_features,
         bias=(orig_k.bias is not None),
         gather_output=False,
-        dtype=torch.bfloat16
+        dtype=torch.bfloat16,
     )
     attn.to_k.weight.data = get_sharded_data(orig_k.weight.data, 0)
     if orig_k.bias is not None:
@@ -379,10 +393,11 @@ def shard_attention_for_cp(tp_degree: int, attn: Attention):
     # Shard V projection
     orig_v = attn.to_v
     attn.to_v = ColumnParallelLinear(
-        orig_v.in_features, orig_v.out_features,
+        orig_v.in_features,
+        orig_v.out_features,
         bias=(orig_v.bias is not None),
         gather_output=False,
-        dtype=torch.bfloat16
+        dtype=torch.bfloat16,
     )
     attn.to_v.weight.data = get_sharded_data(orig_v.weight.data, 0)
     if orig_v.bias is not None:
@@ -392,10 +407,11 @@ def shard_attention_for_cp(tp_degree: int, attn: Attention):
     # Shard output projection
     orig_out = attn.to_out[0]
     attn.to_out[0] = RowParallelLinear(
-        orig_out.in_features, orig_out.out_features,
+        orig_out.in_features,
+        orig_out.out_features,
         bias=(orig_out.bias is not None),
         input_is_parallel=True,
-        dtype=torch.bfloat16
+        dtype=torch.bfloat16,
     )
     attn.to_out[0].weight.data = get_sharded_data(orig_out.weight.data, 1)
     if orig_out.bias is not None:
@@ -403,18 +419,22 @@ def shard_attention_for_cp(tp_degree: int, attn: Attention):
     del orig_out
 
     # Handle norm_q and norm_k
-    if hasattr(attn, 'norm_q') and attn.norm_q is not None:
+    if hasattr(attn, "norm_q") and attn.norm_q is not None:
         orig_norm = attn.norm_q
-        eps = orig_norm.eps if hasattr(orig_norm, 'eps') else 1e-5
-        attn.norm_q = DistributedRMSNorm(new_inner_dim, eps=eps, elementwise_affine=True)
-        if hasattr(orig_norm, 'weight') and orig_norm.weight is not None:
+        eps = orig_norm.eps if hasattr(orig_norm, "eps") else 1e-5
+        attn.norm_q = DistributedRMSNorm(
+            new_inner_dim, eps=eps, elementwise_affine=True
+        )
+        if hasattr(orig_norm, "weight") and orig_norm.weight is not None:
             attn.norm_q.weight.data = get_sharded_data(orig_norm.weight.data, 0)
 
-    if hasattr(attn, 'norm_k') and attn.norm_k is not None:
+    if hasattr(attn, "norm_k") and attn.norm_k is not None:
         orig_norm = attn.norm_k
-        eps = orig_norm.eps if hasattr(orig_norm, 'eps') else 1e-5
-        attn.norm_k = DistributedRMSNorm(new_inner_dim, eps=eps, elementwise_affine=True)
-        if hasattr(orig_norm, 'weight') and orig_norm.weight is not None:
+        eps = orig_norm.eps if hasattr(orig_norm, "eps") else 1e-5
+        attn.norm_k = DistributedRMSNorm(
+            new_inner_dim, eps=eps, elementwise_affine=True
+        )
+        if hasattr(orig_norm, "weight") and orig_norm.weight is not None:
             attn.norm_k.weight.data = get_sharded_data(orig_norm.weight.data, 0)
 
     return attn
@@ -424,10 +444,11 @@ def shard_feedforward_for_cp(ff: FeedForward) -> FeedForward:
     """Shard FeedForward for TP=4."""
     orig_proj = ff.net[0].proj
     ff.net[0].proj = ColumnParallelLinear(
-        orig_proj.in_features, orig_proj.out_features,
+        orig_proj.in_features,
+        orig_proj.out_features,
         bias=(orig_proj.bias is not None),
         gather_output=False,
-        dtype=torch.bfloat16
+        dtype=torch.bfloat16,
     )
     ff.net[0].proj.weight.data = get_sharded_data(orig_proj.weight.data, 0)
     if orig_proj.bias is not None:
@@ -436,10 +457,11 @@ def shard_feedforward_for_cp(ff: FeedForward) -> FeedForward:
 
     orig_linear = ff.net[2]
     ff.net[2] = RowParallelLinear(
-        orig_linear.in_features, orig_linear.out_features,
+        orig_linear.in_features,
+        orig_linear.out_features,
         bias=(orig_linear.bias is not None),
         input_is_parallel=True,
-        dtype=torch.bfloat16
+        dtype=torch.bfloat16,
     )
     ff.net[2].weight.data = get_sharded_data(orig_linear.weight.data, 1)
     if orig_linear.bias is not None:
@@ -460,7 +482,13 @@ class NeuronWanTransformerCP(nn.Module):
     - No I2V support (T2V only)
     """
 
-    def __init__(self, original_transformer, tp_degree, world_size, context_parallel_enabled=False):
+    def __init__(
+        self,
+        original_transformer,
+        tp_degree,
+        world_size,
+        context_parallel_enabled=False,
+    ):
         super().__init__()
 
         self.config = original_transformer.config
@@ -486,7 +514,7 @@ class NeuronWanTransformerCP(nn.Module):
             self.blocks.append(block)
 
             if (i + 1) % 8 == 0:
-                print(f"  Sharded block {i+1}/{len(original_transformer.blocks)}")
+                print(f"  Sharded block {i + 1}/{len(original_transformer.blocks)}")
 
         # Replace attention with CP versions
         self._replace_attention()
@@ -503,13 +531,10 @@ class NeuronWanTransformerCP(nn.Module):
         """Replace attention modules with CP+NKI versions."""
         for i, block in enumerate(self.blocks):
             block.attn1 = CPWanSelfAttention(
-                block.attn1,
-                self.context_parallel_enabled,
-                self.data_parallel_group
+                block.attn1, self.context_parallel_enabled, self.data_parallel_group
             )
             block.attn2 = CPWanCrossAttention(
-                block.attn2,
-                self.context_parallel_enabled
+                block.attn2, self.context_parallel_enabled
             )
         print(f"Replaced attention with CP+NKI versions on {len(self.blocks)} blocks")
 
@@ -533,7 +558,9 @@ class NeuronWanTransformerCP(nn.Module):
             print(f"DEBUG: Using dim={best_dim} (size={best_size}) for RoPE scatter")
             return best_dim
 
-        raise ValueError(f"Cannot find sequence dimension in RoPE tensor with shape {rope_tensor.shape}, expected seq_len={expected_seq_len}")
+        raise ValueError(
+            f"Cannot find sequence dimension in RoPE tensor with shape {rope_tensor.shape}, expected seq_len={expected_seq_len}"
+        )
 
     def forward(
         self,
@@ -543,7 +570,6 @@ class NeuronWanTransformerCP(nn.Module):
         rotary_emb_cos: torch.Tensor,
         rotary_emb_sin: torch.Tensor,
     ) -> torch.Tensor:
-
         batch_size, num_channels, num_frames, height, width = hidden_states.shape
         p_t, p_h, p_w = self.patch_size
         post_patch_num_frames = num_frames // p_t
@@ -572,10 +598,16 @@ class NeuronWanTransformerCP(nn.Module):
 
             rope_seq_dim = self._find_rope_seq_dim(rotary_emb_cos, full_seq_len)
             rotary_emb_cos = split_along_dim(
-                rotary_emb_cos, dim=rope_seq_dim, rank=dp_rank, data_parallel_group=dp_group
+                rotary_emb_cos,
+                dim=rope_seq_dim,
+                rank=dp_rank,
+                data_parallel_group=dp_group,
             )
             rotary_emb_sin = split_along_dim(
-                rotary_emb_sin, dim=rope_seq_dim, rank=dp_rank, data_parallel_group=dp_group
+                rotary_emb_sin,
+                dim=rope_seq_dim,
+                rank=dp_rank,
+                data_parallel_group=dp_group,
             )
 
         # Condition embedding
@@ -591,24 +623,36 @@ class NeuronWanTransformerCP(nn.Module):
             ).chunk(6, dim=1)
 
             # 1. Self-attention with RoPE
-            norm_hidden = (block.norm1(hidden_states.float()) * (1 + scale_msa) + shift_msa).type_as(hidden_states)
+            norm_hidden = (
+                block.norm1(hidden_states.float()) * (1 + scale_msa) + shift_msa
+            ).type_as(hidden_states)
             rotary_emb = (rotary_emb_cos, rotary_emb_sin)
             attn_output = block.attn1(hidden_states=norm_hidden, rotary_emb=rotary_emb)
-            hidden_states = (hidden_states.float() + attn_output * gate_msa).type_as(hidden_states)
+            hidden_states = (hidden_states.float() + attn_output * gate_msa).type_as(
+                hidden_states
+            )
 
             # 2. Cross-attention (no RoPE, K/V from text)
             norm_hidden = block.norm2(hidden_states.float()).type_as(hidden_states)
-            attn_output = block.attn2(hidden_states=norm_hidden, encoder_hidden_states=encoder_hidden_states)
+            attn_output = block.attn2(
+                hidden_states=norm_hidden, encoder_hidden_states=encoder_hidden_states
+            )
             hidden_states = hidden_states + attn_output
 
             # 3. Feed-forward
-            norm_hidden = (block.norm3(hidden_states.float()) * (1 + c_scale_msa) + c_shift_msa).type_as(hidden_states)
+            norm_hidden = (
+                block.norm3(hidden_states.float()) * (1 + c_scale_msa) + c_shift_msa
+            ).type_as(hidden_states)
             ff_output = block.ffn(norm_hidden)
-            hidden_states = (hidden_states.float() + ff_output.float() * c_gate_msa).type_as(hidden_states)
+            hidden_states = (
+                hidden_states.float() + ff_output.float() * c_gate_msa
+            ).type_as(hidden_states)
 
         # Output norm and projection
         shift, scale = (self.scale_shift_table + temb.unsqueeze(1)).chunk(2, dim=1)
-        hidden_states = (self.norm_out(hidden_states.float()) * (1 + scale) + shift).type_as(hidden_states)
+        hidden_states = (
+            self.norm_out(hidden_states.float()) * (1 + scale) + shift
+        ).type_as(hidden_states)
         output = self.proj_out(hidden_states)
 
         # ========== CONTEXT PARALLEL: GATHER OUTPUT ==========
@@ -619,7 +663,14 @@ class NeuronWanTransformerCP(nn.Module):
 
         # Unpatchify
         output = output.reshape(
-            batch_size, post_patch_num_frames, post_patch_height, post_patch_width, p_t, p_h, p_w, -1
+            batch_size,
+            post_patch_num_frames,
+            post_patch_height,
+            post_patch_width,
+            p_t,
+            p_h,
+            p_w,
+            -1,
         )
         output = output.permute(0, 7, 1, 4, 2, 5, 3, 6)
         output = output.flatten(6, 7).flatten(4, 5).flatten(2, 3)
@@ -634,13 +685,26 @@ class TracingWrapper(nn.Module):
         super().__init__()
         self.transformer = transformer
 
-    def forward(self, hidden_states, timestep, encoder_hidden_states, rotary_emb_cos, rotary_emb_sin):
+    def forward(
+        self,
+        hidden_states,
+        timestep,
+        encoder_hidden_states,
+        rotary_emb_cos,
+        rotary_emb_sin,
+    ):
         return self.transformer(
-            hidden_states, timestep, encoder_hidden_states, rotary_emb_cos, rotary_emb_sin
+            hidden_states,
+            timestep,
+            encoder_hidden_states,
+            rotary_emb_cos,
+            rotary_emb_sin,
         )
 
 
-def compute_rope(transformer, latent_frames, latent_height, latent_width, in_channels=16):
+def compute_rope(
+    transformer, latent_frames, latent_height, latent_width, in_channels=16
+):
     """
     Compute full RoPE for given video dimensions.
 
@@ -648,8 +712,7 @@ def compute_rope(transformer, latent_frames, latent_height, latent_width, in_cha
     """
     batch_size = 1
     dummy_hidden = torch.zeros(
-        1, in_channels, latent_frames, latent_height, latent_width,
-        dtype=torch.float32
+        1, in_channels, latent_frames, latent_height, latent_width, dtype=torch.float32
     )
 
     print(f"  Computing RoPE for shape: {dummy_hidden.shape}")
@@ -671,7 +734,9 @@ def fix_norm_weights_per_rank(weights_path, unsharded_norm_weights, tp_degree):
     print(f"Fixing norm weights for {tp_degree} ranks...")
 
     for rank in range(tp_degree):
-        ckpt_path = os.path.join(weights_path, f"tp{rank}_sharded_checkpoint.safetensors")
+        ckpt_path = os.path.join(
+            weights_path, f"tp{rank}_sharded_checkpoint.safetensors"
+        )
         ckpt = load_file(ckpt_path)
 
         fixed_count = 0
@@ -690,7 +755,9 @@ def fix_norm_weights_per_rank(weights_path, unsharded_norm_weights, tp_degree):
                     end = expected_shard_size * (rank + 1)
                     correct_slice = unsharded_weight[start:end].clone()
                 else:
-                    padded_dim = ((unsharded_dim + tp_degree - 1) // tp_degree) * tp_degree
+                    padded_dim = (
+                        (unsharded_dim + tp_degree - 1) // tp_degree
+                    ) * tp_degree
                     padded_weight = torch.ones(padded_dim, dtype=unsharded_weight.dtype)
                     padded_weight[:unsharded_dim] = unsharded_weight
                     shard_size = padded_dim // tp_degree
@@ -710,7 +777,7 @@ def compile_transformer(args):
 
     tp_degree = args.tp_degree
     cp_degree = args.cp_degree
-    context_parallel_enabled = (cp_degree > 1)
+    context_parallel_enabled = cp_degree > 1
     # world_size for model = tp * cp (neuron_parallel_compile may add DP replicas on top)
     model_world_size = tp_degree * cp_degree
     world_size = model_world_size  # used for NxDParallelState and config
@@ -723,12 +790,16 @@ def compile_transformer(args):
 
     # T2V-A14B dimensions
     hidden_size = 5120  # 40 heads * 128 head_dim
-    in_channels = 16    # z_dim = 16
-    text_dim = 4096     # UMT5 text encoder output dim (unchanged)
+    in_channels = 16  # z_dim = 16
+    text_dim = 4096  # UMT5 text encoder output dim (unchanged)
 
     # Calculate sequence length after patch embedding
     patch_size_t, patch_size_h, patch_size_w = 1, 2, 2
-    seq_len = (latent_frames // patch_size_t) * (latent_height // patch_size_h) * (latent_width // patch_size_w)
+    seq_len = (
+        (latent_frames // patch_size_t)
+        * (latent_height // patch_size_h)
+        * (latent_width // patch_size_w)
+    )
 
     print("=" * 60)
     print("Wan2.2 T2V-A14B Transformer Context Parallel Compilation")
@@ -747,12 +818,15 @@ def compile_transformer(args):
 
     # Sample inputs
     sample_hidden_states = torch.randn(
-        batch_size, in_channels, latent_frames, latent_height, latent_width,
-        dtype=torch.bfloat16
+        batch_size,
+        in_channels,
+        latent_frames,
+        latent_height,
+        latent_width,
+        dtype=torch.bfloat16,
     )
     sample_encoder_hidden_states = torch.randn(
-        batch_size, max_sequence_length, text_dim,
-        dtype=torch.bfloat16
+        batch_size, max_sequence_length, text_dim, dtype=torch.bfloat16
     )
     sample_timestep = torch.randn(batch_size, dtype=torch.float32)
 
@@ -760,14 +834,13 @@ def compile_transformer(args):
         print("\nLoading model...")
         model_id = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
         vae = AutoencoderKLWan.from_pretrained(
-            model_id, subfolder="vae",
+            model_id,
+            subfolder="vae",
             torch_dtype=torch.float32,
-            cache_dir=args.cache_dir
+            cache_dir=args.cache_dir,
         )
         pipe = WanPipeline.from_pretrained(
-            model_id, vae=vae,
-            torch_dtype=torch.bfloat16,
-            cache_dir=args.cache_dir
+            model_id, vae=vae, torch_dtype=torch.bfloat16, cache_dir=args.cache_dir
         )
 
         # Select which transformer to compile
@@ -784,7 +857,11 @@ def compile_transformer(args):
         # Compute full RoPE
         print("\nComputing RoPE...")
         rotary_emb_cos, rotary_emb_sin = compute_rope(
-            transformer, latent_frames, latent_height, latent_width, in_channels=in_channels
+            transformer,
+            latent_frames,
+            latent_height,
+            latent_width,
+            in_channels=in_channels,
         )
         rotary_emb_cos = rotary_emb_cos.to(torch.bfloat16)
         rotary_emb_sin = rotary_emb_sin.to(torch.bfloat16)
@@ -797,14 +874,16 @@ def compile_transformer(args):
         # Collect unsharded norm weights (norm_q, norm_k only — no I2V norm_added_k)
         unsharded_norm_weights = {}
         for key, value in unsharded_state.items():
-            if 'norm_k.weight' in key or 'norm_q.weight' in key:
+            if "norm_k.weight" in key or "norm_q.weight" in key:
                 unsharded_norm_weights[f"transformer.{key}"] = value.clone()
         print(f"Collected {len(unsharded_norm_weights)} unsharded norm weights")
 
         # Create Neuron transformer
-        print("\nCreating Neuron transformer (TP={}, CP={}, world_size={})...".format(
-            tp_degree, cp_degree, world_size
-        ))
+        print(
+            "\nCreating Neuron transformer (TP={}, CP={}, world_size={})...".format(
+                tp_degree, cp_degree, world_size
+            )
+        )
         neuron_transformer = NeuronWanTransformerCP(
             transformer, tp_degree, world_size, context_parallel_enabled
         )
@@ -830,7 +909,7 @@ def compile_transformer(args):
         )
 
         print("Compiling model...")
-        compile_args = "--model-type=transformer -O1 --auto-cast=none --internal-hlo2tensorizer-options='--enable-native-kernel=1 --remat'"
+        compile_args = "--model-type=transformer -O2 --auto-cast=none --lnc=2 --tensorizer-options='--enable-ccop-compute-overlap --cc-pipeline-tiling-factor=4' --internal-hlo2tensorizer-options='--enable-native-kernel=1 --remat'"
         traced_model = builder.compile(
             compiler_args=compile_args,
             compiler_workdir=args.compiler_workdir,
@@ -852,7 +931,7 @@ def compile_transformer(args):
         checkpoint = {}
         global_rank_state = {}
         for key, value in model.state_dict().items():
-            if 'global_rank' in key:
+            if "global_rank" in key:
                 global_rank_state[key] = value.clone()
                 continue
             orig_key = key.replace("transformer.", "", 1)
@@ -874,7 +953,9 @@ def compile_transformer(args):
         # Post-process sharded checkpoints
         print("Post-processing sharded checkpoints...")
         for rank in range(tp_degree):
-            shard_file = os.path.join(weights_path, f"tp{rank}_sharded_checkpoint.safetensors")
+            shard_file = os.path.join(
+                weights_path, f"tp{rank}_sharded_checkpoint.safetensors"
+            )
             if not os.path.exists(shard_file):
                 print(f"  WARNING: {shard_file} not found")
                 continue
@@ -882,17 +963,21 @@ def compile_transformer(args):
             shard_data = dict(load_file(shard_file))
             original_count = len(shard_data)
 
-            cleaned = {k: v for k, v in shard_data.items() if 'master_weight' not in k}
+            cleaned = {k: v for k, v in shard_data.items() if "master_weight" not in k}
 
             if global_rank_state:
                 cleaned.update(global_rank_state)
 
             save_file(cleaned, shard_file)
             removed = original_count - len(cleaned) + len(global_rank_state)
-            print(f"  tp{rank}: {original_count} -> {len(cleaned)} tensors (removed {removed} master_weight)")
+            print(
+                f"  tp{rank}: {original_count} -> {len(cleaned)} tensors (removed {removed} master_weight)"
+            )
 
         # Fix norm weights
-        unsharded_norm_weights_bf16 = {k: v.to(torch.bfloat16) for k, v in unsharded_norm_weights.items()}
+        unsharded_norm_weights_bf16 = {
+            k: v.to(torch.bfloat16) for k, v in unsharded_norm_weights.items()
+        }
         fix_norm_weights_per_rank(weights_path, unsharded_norm_weights_bf16, tp_degree)
 
         # Save config
@@ -919,33 +1004,74 @@ def compile_transformer(args):
             json.dump(config, f, indent=2)
 
         # Save RoPE cache
-        torch.save({
-            "rotary_emb_cos": rotary_emb_cos,
-            "rotary_emb_sin": rotary_emb_sin,
-        }, os.path.join(output_path, "rope_cache.pt"))
+        torch.save(
+            {
+                "rotary_emb_cos": rotary_emb_cos,
+                "rotary_emb_sin": rotary_emb_sin,
+            },
+            os.path.join(output_path, "rope_cache.pt"),
+        )
 
         print("\nCompilation complete!")
         print(f"Model saved to: {output_path}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Compile Wan2.2 T2V-A14B Transformer with Context Parallel")
+    parser = argparse.ArgumentParser(
+        description="Compile Wan2.2 T2V-A14B Transformer with Context Parallel"
+    )
     parser.add_argument("--height", type=int, default=480, help="Video height")
     parser.add_argument("--width", type=int, default=832, help="Video width")
     parser.add_argument("--num_frames", type=int, default=81, help="Number of frames")
-    parser.add_argument("--max_sequence_length", type=int, default=512, help="Max text sequence length")
-    parser.add_argument("--tp_degree", type=int, default=4, help="Tensor parallelism degree")
-    parser.add_argument("--cp_degree", type=int, default=1, help="Context parallelism degree (1=disabled, 2=enabled)")
-    parser.add_argument("--world_size", type=int, default=None, help="(Deprecated) Total world size, use --cp_degree instead")
-    parser.add_argument("--compiled_models_dir", type=str, default="compiled_models", help="Output directory")
-    parser.add_argument("--compiler_workdir", type=str, default="compiler_workdir", help="Compiler workdir")
-    parser.add_argument("--cache_dir", type=str, default="/opt/dlami/nvme/wan2.2_t2v_a14b_hf_cache_dir")
-    parser.add_argument("--transformer_subfolder", type=str, default="transformer",
-                        choices=["transformer", "transformer_2"],
-                        help="Which transformer to compile: 'transformer' (high-noise) or 'transformer_2' (low-noise)")
-    parser.add_argument("--batch_size", type=int, default=1, help="Batch size (2 for batched CFG)")
-    parser.add_argument("--output_dir", type=str, default=None,
-                        help="Output directory for compiled model (default: compiled_models_dir/subfolder)")
+    parser.add_argument(
+        "--max_sequence_length", type=int, default=512, help="Max text sequence length"
+    )
+    parser.add_argument(
+        "--tp_degree", type=int, default=4, help="Tensor parallelism degree"
+    )
+    parser.add_argument(
+        "--cp_degree",
+        type=int,
+        default=1,
+        help="Context parallelism degree (1=disabled, 2=enabled)",
+    )
+    parser.add_argument(
+        "--world_size",
+        type=int,
+        default=None,
+        help="(Deprecated) Total world size, use --cp_degree instead",
+    )
+    parser.add_argument(
+        "--compiled_models_dir",
+        type=str,
+        default="compiled_models",
+        help="Output directory",
+    )
+    parser.add_argument(
+        "--compiler_workdir",
+        type=str,
+        default="compiler_workdir",
+        help="Compiler workdir",
+    )
+    parser.add_argument(
+        "--cache_dir", type=str, default="/opt/dlami/nvme/wan2.2_t2v_a14b_hf_cache_dir"
+    )
+    parser.add_argument(
+        "--transformer_subfolder",
+        type=str,
+        default="transformer",
+        choices=["transformer", "transformer_2"],
+        help="Which transformer to compile: 'transformer' (high-noise) or 'transformer_2' (low-noise)",
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=1, help="Batch size (2 for batched CFG)"
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=None,
+        help="Output directory for compiled model (default: compiled_models_dir/subfolder)",
+    )
     args = parser.parse_args()
 
     compile_transformer(args)

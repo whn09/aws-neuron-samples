@@ -133,15 +133,21 @@ def nki_flash_attention(query, key, value):
     k = key.clone().permute(0, 1, 3, 2).reshape((bs * n_head, d_head, padded_k_len))
     v = value.clone().reshape((bs * n_head, padded_v_len, d_head))
 
-    attn_output = torch.zeros((bs * n_head, padded_q_len, d_head), dtype=torch.bfloat16, device=q.device)
+    attn_output = torch.zeros(
+        (bs * n_head, padded_q_len, d_head), dtype=torch.bfloat16, device=q.device
+    )
     scale = 1 / math.sqrt(d_head)
 
     vc_size = int(os.getenv("NEURON_RT_VIRTUAL_CORE_SIZE", "1"))
     if vc_size == 2:
         grid = (nc(2),)
-        _flash_fwd_call[grid](q, k, v, scale, attn_output, kernel_name="AttentionMMSoftmaxMMWithoutSwap")
+        _flash_fwd_call[grid](
+            q, k, v, scale, attn_output, kernel_name="AttentionMMSoftmaxMMWithoutSwap"
+        )
     else:
-        _flash_fwd_call(q, k, v, scale, attn_output, kernel_name="AttentionMMSoftmaxMMWithoutSwap")
+        _flash_fwd_call(
+            q, k, v, scale, attn_output, kernel_name="AttentionMMSoftmaxMMWithoutSwap"
+        )
 
     attn_output = attn_output.reshape((bs, n_head, padded_q_len, d_head))
 
@@ -257,7 +263,13 @@ class CPWanSelfAttention(nn.Module):
     4. RoPE is applied before K/V gathering
     """
 
-    def __init__(self, orig_attn, context_parallel_enabled=False, data_parallel_group=None, skip_kv_gather=False):
+    def __init__(
+        self,
+        orig_attn,
+        context_parallel_enabled=False,
+        data_parallel_group=None,
+        skip_kv_gather=False,
+    ):
         super().__init__()
 
         self.context_parallel_enabled = context_parallel_enabled
@@ -272,11 +284,13 @@ class CPWanSelfAttention(nn.Module):
         self.to_out = orig_attn.to_out
 
         # QK normalization
-        self.norm_q = orig_attn.norm_q if hasattr(orig_attn, 'norm_q') else None
-        self.norm_k = orig_attn.norm_k if hasattr(orig_attn, 'norm_k') else None
+        self.norm_q = orig_attn.norm_q if hasattr(orig_attn, "norm_q") else None
+        self.norm_k = orig_attn.norm_k if hasattr(orig_attn, "norm_k") else None
 
         # Store inner_dim for reshaping
-        self.inner_dim = orig_attn.inner_dim if hasattr(orig_attn, 'inner_dim') else None
+        self.inner_dim = (
+            orig_attn.inner_dim if hasattr(orig_attn, "inner_dim") else None
+        )
 
     def forward(
         self,
@@ -363,15 +377,23 @@ class CPWanCrossAttention(nn.Module):
         self.to_out = orig_attn.to_out
 
         # QK normalization
-        self.norm_q = orig_attn.norm_q if hasattr(orig_attn, 'norm_q') else None
-        self.norm_k = orig_attn.norm_k if hasattr(orig_attn, 'norm_k') else None
+        self.norm_q = orig_attn.norm_q if hasattr(orig_attn, "norm_q") else None
+        self.norm_k = orig_attn.norm_k if hasattr(orig_attn, "norm_k") else None
 
         # I2V: additional projections for image context
-        self.add_k_proj = orig_attn.add_k_proj if hasattr(orig_attn, 'add_k_proj') else None
-        self.add_v_proj = orig_attn.add_v_proj if hasattr(orig_attn, 'add_v_proj') else None
-        self.norm_added_k = orig_attn.norm_added_k if hasattr(orig_attn, 'norm_added_k') else None
+        self.add_k_proj = (
+            orig_attn.add_k_proj if hasattr(orig_attn, "add_k_proj") else None
+        )
+        self.add_v_proj = (
+            orig_attn.add_v_proj if hasattr(orig_attn, "add_v_proj") else None
+        )
+        self.norm_added_k = (
+            orig_attn.norm_added_k if hasattr(orig_attn, "norm_added_k") else None
+        )
 
-        self.inner_dim = orig_attn.inner_dim if hasattr(orig_attn, 'inner_dim') else None
+        self.inner_dim = (
+            orig_attn.inner_dim if hasattr(orig_attn, "inner_dim") else None
+        )
 
     def forward(
         self,
@@ -391,7 +413,7 @@ class CPWanCrossAttention(nn.Module):
             encoder_hidden_states = encoder_hidden_states[:, image_context_length:]
 
         # Query from video (split), K/V from text (NOT split)
-        query = self.to_q(hidden_states)       # [B, local_seq, H_local*D]
+        query = self.to_q(hidden_states)  # [B, local_seq, H_local*D]
         key = self.to_k(encoder_hidden_states)  # [B, text_len, H_local*D]
         value = self.to_v(encoder_hidden_states)
 
@@ -410,17 +432,25 @@ class CPWanCrossAttention(nn.Module):
         # Handle I2V image attention
         hidden_states_img = None
         if encoder_hidden_states_img is not None:
-            key_img = self.add_k_proj(encoder_hidden_states_img)  # [B, img_len, H_local*D]
+            key_img = self.add_k_proj(
+                encoder_hidden_states_img
+            )  # [B, img_len, H_local*D]
             if self.norm_added_k is not None and self.norm_added_k.weight is not None:
-                key_img = local_rms_norm(key_img, self.norm_added_k.weight, self.norm_added_k.eps)
+                key_img = local_rms_norm(
+                    key_img, self.norm_added_k.weight, self.norm_added_k.eps
+                )
             value_img = self.add_v_proj(encoder_hidden_states_img)
 
             key_img = key_img.view(batch_size, -1, self.heads, head_dim).transpose(1, 2)
-            value_img = value_img.view(batch_size, -1, self.heads, head_dim).transpose(1, 2)
+            value_img = value_img.view(batch_size, -1, self.heads, head_dim).transpose(
+                1, 2
+            )
 
             # NKI attention for image context
             hidden_states_img = nki_flash_attention(query, key_img, value_img)
-            hidden_states_img = hidden_states_img.transpose(1, 2).reshape(batch_size, local_seq, -1)
+            hidden_states_img = hidden_states_img.transpose(1, 2).reshape(
+                batch_size, local_seq, -1
+            )
             hidden_states_img = hidden_states_img.to(query.dtype)
 
         # NKI Flash Attention for text context
@@ -471,10 +501,11 @@ def shard_attention_for_cp(tp_degree: int, attn: Attention):
     # Shard Q projection
     orig_q = attn.to_q
     attn.to_q = ColumnParallelLinear(
-        orig_q.in_features, orig_q.out_features,
+        orig_q.in_features,
+        orig_q.out_features,
         bias=(orig_q.bias is not None),
         gather_output=False,
-        dtype=torch.bfloat16
+        dtype=torch.bfloat16,
     )
     attn.to_q.weight.data = get_sharded_data(orig_q.weight.data, 0)
     if orig_q.bias is not None:
@@ -484,10 +515,11 @@ def shard_attention_for_cp(tp_degree: int, attn: Attention):
     # Shard K projection
     orig_k = attn.to_k
     attn.to_k = ColumnParallelLinear(
-        orig_k.in_features, orig_k.out_features,
+        orig_k.in_features,
+        orig_k.out_features,
         bias=(orig_k.bias is not None),
         gather_output=False,
-        dtype=torch.bfloat16
+        dtype=torch.bfloat16,
     )
     attn.to_k.weight.data = get_sharded_data(orig_k.weight.data, 0)
     if orig_k.bias is not None:
@@ -497,10 +529,11 @@ def shard_attention_for_cp(tp_degree: int, attn: Attention):
     # Shard V projection
     orig_v = attn.to_v
     attn.to_v = ColumnParallelLinear(
-        orig_v.in_features, orig_v.out_features,
+        orig_v.in_features,
+        orig_v.out_features,
         bias=(orig_v.bias is not None),
         gather_output=False,
-        dtype=torch.bfloat16
+        dtype=torch.bfloat16,
     )
     attn.to_v.weight.data = get_sharded_data(orig_v.weight.data, 0)
     if orig_v.bias is not None:
@@ -510,10 +543,11 @@ def shard_attention_for_cp(tp_degree: int, attn: Attention):
     # Shard output projection
     orig_out = attn.to_out[0]
     attn.to_out[0] = RowParallelLinear(
-        orig_out.in_features, orig_out.out_features,
+        orig_out.in_features,
+        orig_out.out_features,
         bias=(orig_out.bias is not None),
         input_is_parallel=True,
-        dtype=torch.bfloat16
+        dtype=torch.bfloat16,
     )
     attn.to_out[0].weight.data = get_sharded_data(orig_out.weight.data, 1)
     if orig_out.bias is not None:
@@ -521,53 +555,69 @@ def shard_attention_for_cp(tp_degree: int, attn: Attention):
     del orig_out
 
     # Handle norm_q and norm_k with DistributedRMSNorm
-    if hasattr(attn, 'norm_q') and attn.norm_q is not None:
+    if hasattr(attn, "norm_q") and attn.norm_q is not None:
         orig_norm = attn.norm_q
-        eps = orig_norm.eps if hasattr(orig_norm, 'eps') else 1e-5
-        attn.norm_q = DistributedRMSNorm(new_inner_dim, eps=eps, elementwise_affine=True)
-        if hasattr(orig_norm, 'weight') and orig_norm.weight is not None:
+        eps = orig_norm.eps if hasattr(orig_norm, "eps") else 1e-5
+        attn.norm_q = DistributedRMSNorm(
+            new_inner_dim, eps=eps, elementwise_affine=True
+        )
+        if hasattr(orig_norm, "weight") and orig_norm.weight is not None:
             attn.norm_q.weight.data = get_sharded_data(orig_norm.weight.data, 0)
 
-    if hasattr(attn, 'norm_k') and attn.norm_k is not None:
+    if hasattr(attn, "norm_k") and attn.norm_k is not None:
         orig_norm = attn.norm_k
-        eps = orig_norm.eps if hasattr(orig_norm, 'eps') else 1e-5
-        attn.norm_k = DistributedRMSNorm(new_inner_dim, eps=eps, elementwise_affine=True)
-        if hasattr(orig_norm, 'weight') and orig_norm.weight is not None:
+        eps = orig_norm.eps if hasattr(orig_norm, "eps") else 1e-5
+        attn.norm_k = DistributedRMSNorm(
+            new_inner_dim, eps=eps, elementwise_affine=True
+        )
+        if hasattr(orig_norm, "weight") and orig_norm.weight is not None:
             attn.norm_k.weight.data = get_sharded_data(orig_norm.weight.data, 0)
 
     # Handle I2V projections
-    if hasattr(attn, 'add_k_proj') and attn.add_k_proj is not None:
+    if hasattr(attn, "add_k_proj") and attn.add_k_proj is not None:
         orig_add_k = attn.add_k_proj
         attn.add_k_proj = ColumnParallelLinear(
-            orig_add_k.in_features, orig_add_k.out_features,
+            orig_add_k.in_features,
+            orig_add_k.out_features,
             bias=(orig_add_k.bias is not None),
             gather_output=False,
-            dtype=torch.bfloat16
+            dtype=torch.bfloat16,
         )
         attn.add_k_proj.weight.data = get_sharded_data(orig_add_k.weight.data, 0)
         if orig_add_k.bias is not None:
             attn.add_k_proj.bias.data = get_sharded_data(orig_add_k.bias.data, 0)
         del orig_add_k
 
-    if hasattr(attn, 'add_v_proj') and attn.add_v_proj is not None:
+    if hasattr(attn, "add_v_proj") and attn.add_v_proj is not None:
         orig_add_v = attn.add_v_proj
         attn.add_v_proj = ColumnParallelLinear(
-            orig_add_v.in_features, orig_add_v.out_features,
+            orig_add_v.in_features,
+            orig_add_v.out_features,
             bias=(orig_add_v.bias is not None),
             gather_output=False,
-            dtype=torch.bfloat16
+            dtype=torch.bfloat16,
         )
         attn.add_v_proj.weight.data = get_sharded_data(orig_add_v.weight.data, 0)
         if orig_add_v.bias is not None:
             attn.add_v_proj.bias.data = get_sharded_data(orig_add_v.bias.data, 0)
         del orig_add_v
 
-    if hasattr(attn, 'norm_added_k') and attn.norm_added_k is not None:
+    if hasattr(attn, "norm_added_k") and attn.norm_added_k is not None:
         orig_norm = attn.norm_added_k
-        eps = orig_norm.eps if hasattr(orig_norm, 'eps') else 1e-5
-        elementwise = orig_norm.elementwise_affine if hasattr(orig_norm, 'elementwise_affine') else False
-        attn.norm_added_k = DistributedRMSNorm(new_inner_dim, eps=eps, elementwise_affine=elementwise)
-        if elementwise and hasattr(orig_norm, 'weight') and orig_norm.weight is not None:
+        eps = orig_norm.eps if hasattr(orig_norm, "eps") else 1e-5
+        elementwise = (
+            orig_norm.elementwise_affine
+            if hasattr(orig_norm, "elementwise_affine")
+            else False
+        )
+        attn.norm_added_k = DistributedRMSNorm(
+            new_inner_dim, eps=eps, elementwise_affine=elementwise
+        )
+        if (
+            elementwise
+            and hasattr(orig_norm, "weight")
+            and orig_norm.weight is not None
+        ):
             attn.norm_added_k.weight.data = get_sharded_data(orig_norm.weight.data, 0)
 
     return attn
@@ -577,10 +627,11 @@ def shard_feedforward_for_cp(ff: FeedForward) -> FeedForward:
     """Shard FeedForward for TP=4."""
     orig_proj = ff.net[0].proj
     ff.net[0].proj = ColumnParallelLinear(
-        orig_proj.in_features, orig_proj.out_features,
+        orig_proj.in_features,
+        orig_proj.out_features,
         bias=(orig_proj.bias is not None),
         gather_output=False,
-        dtype=torch.bfloat16
+        dtype=torch.bfloat16,
     )
     ff.net[0].proj.weight.data = get_sharded_data(orig_proj.weight.data, 0)
     if orig_proj.bias is not None:
@@ -589,10 +640,11 @@ def shard_feedforward_for_cp(ff: FeedForward) -> FeedForward:
 
     orig_linear = ff.net[2]
     ff.net[2] = RowParallelLinear(
-        orig_linear.in_features, orig_linear.out_features,
+        orig_linear.in_features,
+        orig_linear.out_features,
         bias=(orig_linear.bias is not None),
         input_is_parallel=True,
-        dtype=torch.bfloat16
+        dtype=torch.bfloat16,
     )
     ff.net[2].weight.data = get_sharded_data(orig_linear.weight.data, 1)
     if orig_linear.bias is not None:
@@ -614,7 +666,14 @@ class NeuronWanTransformerV3CP(nn.Module):
     - NKI Flash Attention
     """
 
-    def __init__(self, original_transformer, tp_degree, world_size, context_parallel_enabled=False, cfg_parallel=False):
+    def __init__(
+        self,
+        original_transformer,
+        tp_degree,
+        world_size,
+        context_parallel_enabled=False,
+        cfg_parallel=False,
+    ):
         super().__init__()
 
         self.config = original_transformer.config
@@ -646,7 +705,7 @@ class NeuronWanTransformerV3CP(nn.Module):
             self.blocks.append(block)
 
             if (i + 1) % 8 == 0:
-                print(f"  Sharded block {i+1}/{len(original_transformer.blocks)}")
+                print(f"  Sharded block {i + 1}/{len(original_transformer.blocks)}")
 
         # Replace attention with CP versions
         self._replace_attention()
@@ -674,12 +733,13 @@ class NeuronWanTransformerV3CP(nn.Module):
 
             # Replace cross-attention (attn2) - no K/V gather in either mode
             block.attn2 = CPWanCrossAttention(
-                block.attn2,
-                self.context_parallel_enabled
+                block.attn2, self.context_parallel_enabled
             )
 
         mode = "CFG" if self.cfg_parallel else "CP"
-        print(f"Replaced attention with {mode}+NKI versions on {len(self.blocks)} blocks")
+        print(
+            f"Replaced attention with {mode}+NKI versions on {len(self.blocks)} blocks"
+        )
 
     def _find_rope_seq_dim(self, rope_tensor, expected_seq_len):
         """
@@ -712,7 +772,9 @@ class NeuronWanTransformerV3CP(nn.Module):
             print(f"DEBUG: Using dim={best_dim} (size={best_size}) for RoPE scatter")
             return best_dim
 
-        raise ValueError(f"Cannot find sequence dimension in RoPE tensor with shape {rope_tensor.shape}, expected seq_len={expected_seq_len}")
+        raise ValueError(
+            f"Cannot find sequence dimension in RoPE tensor with shape {rope_tensor.shape}, expected seq_len={expected_seq_len}"
+        )
 
     def forward(
         self,
@@ -756,7 +818,10 @@ class NeuronWanTransformerV3CP(nn.Module):
                     hidden_states, dim=0, rank=dp_rank, data_parallel_group=dp_group
                 )
                 encoder_hidden_states = split_along_dim(
-                    encoder_hidden_states, dim=0, rank=dp_rank, data_parallel_group=dp_group
+                    encoder_hidden_states,
+                    dim=0,
+                    rank=dp_rank,
+                    data_parallel_group=dp_group,
                 )
                 timestep = split_along_dim(
                     timestep, dim=0, rank=dp_rank, data_parallel_group=dp_group
@@ -771,10 +836,16 @@ class NeuronWanTransformerV3CP(nn.Module):
                 # Split RoPE along sequence dim
                 rope_seq_dim = self._find_rope_seq_dim(rotary_emb_cos, full_seq_len)
                 rotary_emb_cos = split_along_dim(
-                    rotary_emb_cos, dim=rope_seq_dim, rank=dp_rank, data_parallel_group=dp_group
+                    rotary_emb_cos,
+                    dim=rope_seq_dim,
+                    rank=dp_rank,
+                    data_parallel_group=dp_group,
                 )
                 rotary_emb_sin = split_along_dim(
-                    rotary_emb_sin, dim=rope_seq_dim, rank=dp_rank, data_parallel_group=dp_group
+                    rotary_emb_sin,
+                    dim=rope_seq_dim,
+                    rank=dp_rank,
+                    data_parallel_group=dp_group,
                 )
 
         # Condition embedding
@@ -791,24 +862,36 @@ class NeuronWanTransformerV3CP(nn.Module):
             ).chunk(6, dim=1)
 
             # 1. Self-attention with RoPE
-            norm_hidden = (block.norm1(hidden_states.float()) * (1 + scale_msa) + shift_msa).type_as(hidden_states)
+            norm_hidden = (
+                block.norm1(hidden_states.float()) * (1 + scale_msa) + shift_msa
+            ).type_as(hidden_states)
             rotary_emb = (rotary_emb_cos, rotary_emb_sin)
             attn_output = block.attn1(hidden_states=norm_hidden, rotary_emb=rotary_emb)
-            hidden_states = (hidden_states.float() + attn_output * gate_msa).type_as(hidden_states)
+            hidden_states = (hidden_states.float() + attn_output * gate_msa).type_as(
+                hidden_states
+            )
 
             # 2. Cross-attention (no RoPE, K/V from text)
             norm_hidden = block.norm2(hidden_states.float()).type_as(hidden_states)
-            attn_output = block.attn2(hidden_states=norm_hidden, encoder_hidden_states=encoder_hidden_states)
+            attn_output = block.attn2(
+                hidden_states=norm_hidden, encoder_hidden_states=encoder_hidden_states
+            )
             hidden_states = hidden_states + attn_output
 
             # 3. Feed-forward
-            norm_hidden = (block.norm3(hidden_states.float()) * (1 + c_scale_msa) + c_shift_msa).type_as(hidden_states)
+            norm_hidden = (
+                block.norm3(hidden_states.float()) * (1 + c_scale_msa) + c_shift_msa
+            ).type_as(hidden_states)
             ff_output = block.ffn(norm_hidden)
-            hidden_states = (hidden_states.float() + ff_output.float() * c_gate_msa).type_as(hidden_states)
+            hidden_states = (
+                hidden_states.float() + ff_output.float() * c_gate_msa
+            ).type_as(hidden_states)
 
         # Output norm and projection
         shift, scale = (self.scale_shift_table + temb.unsqueeze(1)).chunk(2, dim=1)
-        hidden_states = (self.norm_out(hidden_states.float()) * (1 + scale) + shift).type_as(hidden_states)
+        hidden_states = (
+            self.norm_out(hidden_states.float()) * (1 + scale) + shift
+        ).type_as(hidden_states)
         output = self.proj_out(hidden_states)
 
         # ========== PARALLEL: GATHER OUTPUT ==========
@@ -820,7 +903,14 @@ class NeuronWanTransformerV3CP(nn.Module):
 
         # Unpatchify
         output = output.reshape(
-            batch_size, post_patch_num_frames, post_patch_height, post_patch_width, p_t, p_h, p_w, -1
+            batch_size,
+            post_patch_num_frames,
+            post_patch_height,
+            post_patch_width,
+            p_t,
+            p_h,
+            p_w,
+            -1,
         )
         output = output.permute(0, 7, 1, 4, 2, 5, 3, 6)
         output = output.flatten(6, 7).flatten(4, 5).flatten(2, 3)
@@ -835,13 +925,26 @@ class TracingWrapper(nn.Module):
         super().__init__()
         self.transformer = transformer
 
-    def forward(self, hidden_states, timestep, encoder_hidden_states, rotary_emb_cos, rotary_emb_sin):
+    def forward(
+        self,
+        hidden_states,
+        timestep,
+        encoder_hidden_states,
+        rotary_emb_cos,
+        rotary_emb_sin,
+    ):
         return self.transformer(
-            hidden_states, timestep, encoder_hidden_states, rotary_emb_cos, rotary_emb_sin
+            hidden_states,
+            timestep,
+            encoder_hidden_states,
+            rotary_emb_cos,
+            rotary_emb_sin,
         )
 
 
-def compute_rope(transformer, latent_frames, latent_height, latent_width, in_channels=48):
+def compute_rope(
+    transformer, latent_frames, latent_height, latent_width, in_channels=48
+):
     """
     Compute full RoPE for given video dimensions.
 
@@ -851,8 +954,12 @@ def compute_rope(transformer, latent_frames, latent_height, latent_width, in_cha
     # Create dummy hidden_states to trigger rope computation
     batch_size = 1
     dummy_hidden = torch.zeros(
-        batch_size, in_channels, latent_frames, latent_height, latent_width,
-        dtype=torch.float32
+        batch_size,
+        in_channels,
+        latent_frames,
+        latent_height,
+        latent_width,
+        dtype=torch.float32,
     )
 
     print(f"  Computing RoPE for shape: {dummy_hidden.shape}")
@@ -883,7 +990,9 @@ def fix_norm_weights_per_rank(weights_path, unsharded_norm_weights, tp_degree):
     print(f"Fixing norm weights for {tp_degree} ranks...")
 
     for rank in range(tp_degree):
-        ckpt_path = os.path.join(weights_path, f"tp{rank}_sharded_checkpoint.safetensors")
+        ckpt_path = os.path.join(
+            weights_path, f"tp{rank}_sharded_checkpoint.safetensors"
+        )
         ckpt = load_file(ckpt_path)
 
         fixed_count = 0
@@ -905,7 +1014,9 @@ def fix_norm_weights_per_rank(weights_path, unsharded_norm_weights, tp_degree):
                     correct_slice = unsharded_weight[start:end].clone()
                 else:
                     # Dimension needs padding (not evenly divisible)
-                    padded_dim = ((unsharded_dim + tp_degree - 1) // tp_degree) * tp_degree
+                    padded_dim = (
+                        (unsharded_dim + tp_degree - 1) // tp_degree
+                    ) * tp_degree
                     padded_weight = torch.ones(padded_dim, dtype=unsharded_weight.dtype)
                     padded_weight[:unsharded_dim] = unsharded_weight
                     shard_size = padded_dim // tp_degree
@@ -925,8 +1036,8 @@ def compile_transformer_v3_cp(args):
 
     tp_degree = args.tp_degree
     world_size = args.world_size
-    cfg_parallel = getattr(args, 'cfg_parallel', False)
-    context_parallel_enabled = (world_size != tp_degree)
+    cfg_parallel = getattr(args, "cfg_parallel", False)
+    context_parallel_enabled = world_size != tp_degree
     cp_degree = world_size // tp_degree if context_parallel_enabled else 1
 
     latent_height = args.height // 16
@@ -940,7 +1051,11 @@ def compile_transformer_v3_cp(args):
 
     # Calculate sequence length after patch embedding
     patch_size_t, patch_size_h, patch_size_w = 1, 2, 2
-    seq_len = (latent_frames // patch_size_t) * (latent_height // patch_size_h) * (latent_width // patch_size_w)
+    seq_len = (
+        (latent_frames // patch_size_t)
+        * (latent_height // patch_size_h)
+        * (latent_width // patch_size_w)
+    )
 
     mode = "CFG Parallel" if cfg_parallel else "Context Parallel"
     print("=" * 60)
@@ -959,12 +1074,15 @@ def compile_transformer_v3_cp(args):
 
     # Sample inputs
     sample_hidden_states = torch.randn(
-        batch_size, in_channels, latent_frames, latent_height, latent_width,
-        dtype=torch.bfloat16
+        batch_size,
+        in_channels,
+        latent_frames,
+        latent_height,
+        latent_width,
+        dtype=torch.bfloat16,
     )
     sample_encoder_hidden_states = torch.randn(
-        batch_size, max_sequence_length, hidden_size,
-        dtype=torch.bfloat16
+        batch_size, max_sequence_length, hidden_size, dtype=torch.bfloat16
     )
     sample_timestep = torch.randn(batch_size, dtype=torch.float32)
 
@@ -972,14 +1090,16 @@ def compile_transformer_v3_cp(args):
         print("\nLoading model...")
         model_id = "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
         vae = AutoencoderKLWan.from_pretrained(
-            model_id, subfolder="vae",
+            model_id,
+            subfolder="vae",
             torch_dtype=torch.float32,
-            cache_dir="/opt/dlami/nvme/wan2.2_ti2v_hf_cache_dir"
+            cache_dir="/opt/dlami/nvme/wan2.2_ti2v_hf_cache_dir",
         )
         pipe = WanPipeline.from_pretrained(
-            model_id, vae=vae,
+            model_id,
+            vae=vae,
             torch_dtype=torch.bfloat16,
-            cache_dir="/opt/dlami/nvme/wan2.2_ti2v_hf_cache_dir"
+            cache_dir="/opt/dlami/nvme/wan2.2_ti2v_hf_cache_dir",
         )
 
         # Compute full RoPE
@@ -998,16 +1118,26 @@ def compile_transformer_v3_cp(args):
         # Collect unsharded norm weights (norm_q, norm_k, norm_added_k for I2V)
         unsharded_norm_weights = {}
         for key, value in unsharded_state.items():
-            if 'norm_k.weight' in key or 'norm_q.weight' in key or 'norm_added_k.weight' in key:
+            if (
+                "norm_k.weight" in key
+                or "norm_q.weight" in key
+                or "norm_added_k.weight" in key
+            ):
                 unsharded_norm_weights[f"transformer.{key}"] = value.clone()
         print(f"Collected {len(unsharded_norm_weights)} unsharded norm weights")
 
         # Create Neuron transformer
-        print("\nCreating Neuron transformer (TP={}, {}={}, world_size={})...".format(
-            tp_degree, "CFG" if cfg_parallel else "CP", cp_degree, world_size
-        ))
+        print(
+            "\nCreating Neuron transformer (TP={}, {}={}, world_size={})...".format(
+                tp_degree, "CFG" if cfg_parallel else "CP", cp_degree, world_size
+            )
+        )
         neuron_transformer = NeuronWanTransformerV3CP(
-            pipe.transformer, tp_degree, world_size, context_parallel_enabled, cfg_parallel=cfg_parallel
+            pipe.transformer,
+            tp_degree,
+            world_size,
+            context_parallel_enabled,
+            cfg_parallel=cfg_parallel,
         )
         neuron_transformer = neuron_transformer.to(torch.bfloat16)
         neuron_transformer.eval()
@@ -1031,7 +1161,7 @@ def compile_transformer_v3_cp(args):
         )
 
         print("Compiling model...")
-        compile_args = "--model-type=transformer -O1 --auto-cast=none --internal-hlo2tensorizer-options='--enable-native-kernel=1 --remat'"
+        compile_args = "--model-type=transformer -O2 --auto-cast=none --lnc=2 --tensorizer-options='--enable-ccop-compute-overlap --cc-pipeline-tiling-factor=4' --internal-hlo2tensorizer-options='--enable-native-kernel=1 --remat'"
         traced_model = builder.compile(
             compiler_args=compile_args,
             compiler_workdir=args.compiler_workdir,
@@ -1053,7 +1183,7 @@ def compile_transformer_v3_cp(args):
         checkpoint = {}
         global_rank_state = {}
         for key, value in model.state_dict().items():
-            if 'global_rank' in key:
+            if "global_rank" in key:
                 global_rank_state[key] = value.clone()
                 continue
             orig_key = key.replace("transformer.", "", 1)
@@ -1076,7 +1206,9 @@ def compile_transformer_v3_cp(args):
         # Post-process sharded checkpoints: remove master_weight tensors and add global_rank
         print("Post-processing sharded checkpoints...")
         for rank in range(tp_degree):
-            shard_file = os.path.join(weights_path, f"tp{rank}_sharded_checkpoint.safetensors")
+            shard_file = os.path.join(
+                weights_path, f"tp{rank}_sharded_checkpoint.safetensors"
+            )
             if not os.path.exists(shard_file):
                 print(f"  WARNING: {shard_file} not found")
                 continue
@@ -1085,7 +1217,7 @@ def compile_transformer_v3_cp(args):
             original_count = len(shard_data)
 
             # Remove master_weight tensors (duplicates created by shard_checkpoint)
-            cleaned = {k: v for k, v in shard_data.items() if 'master_weight' not in k}
+            cleaned = {k: v for k, v in shard_data.items() if "master_weight" not in k}
 
             # Add SPMDRank state
             if global_rank_state:
@@ -1093,10 +1225,14 @@ def compile_transformer_v3_cp(args):
 
             save_file(cleaned, shard_file)
             removed = original_count - len(cleaned) + len(global_rank_state)
-            print(f"  tp{rank}: {original_count} -> {len(cleaned)} tensors (removed {removed} master_weight)")
+            print(
+                f"  tp{rank}: {original_count} -> {len(cleaned)} tensors (removed {removed} master_weight)"
+            )
 
         # Fix norm weights - also convert to bfloat16
-        unsharded_norm_weights_bf16 = {k: v.to(torch.bfloat16) for k, v in unsharded_norm_weights.items()}
+        unsharded_norm_weights_bf16 = {
+            k: v.to(torch.bfloat16) for k, v in unsharded_norm_weights.items()
+        }
         fix_norm_weights_per_rank(weights_path, unsharded_norm_weights_bf16, tp_degree)
 
         # Save config
@@ -1121,27 +1257,51 @@ def compile_transformer_v3_cp(args):
             json.dump(config, f, indent=2)
 
         # Save RoPE cache
-        torch.save({
-            "rotary_emb_cos": rotary_emb_cos,
-            "rotary_emb_sin": rotary_emb_sin,
-        }, os.path.join(output_path, "rope_cache.pt"))
+        torch.save(
+            {
+                "rotary_emb_cos": rotary_emb_cos,
+                "rotary_emb_sin": rotary_emb_sin,
+            },
+            os.path.join(output_path, "rope_cache.pt"),
+        )
 
         print("\nCompilation complete!")
         print(f"Model saved to: {output_path}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Compile Wan2.2 Transformer with Context Parallel")
+    parser = argparse.ArgumentParser(
+        description="Compile Wan2.2 Transformer with Context Parallel"
+    )
     parser.add_argument("--height", type=int, default=512, help="Video height")
     parser.add_argument("--width", type=int, default=512, help="Video width")
     parser.add_argument("--num_frames", type=int, default=81, help="Number of frames")
-    parser.add_argument("--max_sequence_length", type=int, default=512, help="Max text sequence length")
-    parser.add_argument("--tp_degree", type=int, default=4, help="Tensor parallelism degree")
-    parser.add_argument("--world_size", type=int, default=8, help="Total world size (TP x CP)")
-    parser.add_argument("--compiled_models_dir", type=str, default="compiled_models", help="Output directory")
-    parser.add_argument("--compiler_workdir", type=str, default="compiler_workdir", help="Compiler workdir")
-    parser.add_argument("--cfg_parallel", action="store_true",
-                        help="Use CFG Parallel (batch=2, no K/V gather) instead of Context Parallel")
+    parser.add_argument(
+        "--max_sequence_length", type=int, default=512, help="Max text sequence length"
+    )
+    parser.add_argument(
+        "--tp_degree", type=int, default=4, help="Tensor parallelism degree"
+    )
+    parser.add_argument(
+        "--world_size", type=int, default=8, help="Total world size (TP x CP)"
+    )
+    parser.add_argument(
+        "--compiled_models_dir",
+        type=str,
+        default="compiled_models",
+        help="Output directory",
+    )
+    parser.add_argument(
+        "--compiler_workdir",
+        type=str,
+        default="compiler_workdir",
+        help="Compiler workdir",
+    )
+    parser.add_argument(
+        "--cfg_parallel",
+        action="store_true",
+        help="Use CFG Parallel (batch=2, no K/V gather) instead of Context Parallel",
+    )
     args = parser.parse_args()
 
     compile_transformer_v3_cp(args)
